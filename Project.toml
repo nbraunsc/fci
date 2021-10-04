@@ -1,0 +1,13 @@
+name = "fci"
+uuid = "c66f9858-31f9-4c74-8d2b-409fc81a44ed"
+authors = ["Nicole Braunscheidel", "Virginia Tech"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
