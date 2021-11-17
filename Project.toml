@@ -3,6 +3,10 @@ uuid = "c66f9858-31f9-4c74-8d2b-409fc81a44ed"
 authors = ["Nicole Braunscheidel", "Virginia Tech"]
 version = "0.1.0"
 
+[deps]
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+
 [compat]
 julia = "1"
 
