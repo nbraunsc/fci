@@ -14,7 +14,7 @@ function lanczos(matrix, b, m=12)
     w = matrix*V[:,1]
     #orthogonalise
     T[1,1] = dot(w,V[:,1])
-    @printf("eigenvalue %f \n testing \n", T[1,1])
+    @printf("eigenvalue %f \n", T[1,1])
     w = w - T[1,1]*V[:,1]
     #normalze next vector
     T[2,1] = norm(w)
@@ -45,11 +45,11 @@ function lanczos(matrix, b, m=12)
     #value
     return Tm, V
 end
-
+#={{{=#
 #n = ARGS[1]
 #m = ARGS[2]
 #before = rand(Float64, (n,n))
 #matrix = Symmetric(before)
 #Tm, V = lanczos(matrix, rand(Float64, n),m)
 #println("\nTm matrix from Lanczos:")
-#Tm
+#Tm}}}
