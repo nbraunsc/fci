@@ -4,6 +4,12 @@ using LinearAlgebra
 using Printf
 using Revise
 
+#n = 500
+#m = 12
+#before = rand(Float64, (n,n))
+#matrix = Symmetric(before)
+#Tm, V = lanczos(matrix, rand(Float64, n),m)
+
 function lanczos(matrix, b, m=12)
     #initalize empty matrices for T and V
     T = zeros(Float64, m+1, m)
@@ -19,30 +25,52 @@ function lanczos(matrix, b, m=12)
     #normalze next vector
     T[2,1] = norm(w)
     V[:,2] = w/T[2,1]
+    old = norm(matrix*V[:,1] - V[:,1]*T[2,1])
     for j = 2:m
         #make T symmetric
         T[j-1, j] = T[j, j-1]
+        
         #next vector
         w = matrix*V[:,j]
         #orthogonalise agaisnt two previous vectors
-        w = w - T[j-1, j]*V[:, j-1] #subtract projection on v_(j-1)
         T[j,j] = dot(w,V[:, j])
-        w = w - T[j,j]*V[:,j] #subtract projection on v_j
+        # below is like this w_3 = w_3 - a_2 |v_2> - b_2 |v_1>
+        w = w - dot(w,V[:,j])*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
+        
+        # note: <v_2 | H | v_0> = 0 so only have to subtract two previous vectors for othogonalization
+        # that is what is being checked below
+        #if j > 3
+        #    value = dot(w, V[:,j-2])
+        #    println("\n overlap with diff >1: ", value)
+        #end
+        
         #normalize
         T[j+1, j] = norm(w)
-        #println(T[j+1, j])
         V[:,j+1] = w/T[j+1, j]
+        
+        #convergence check
+        # A*V_j - V_j*T
+        new = norm(matrix*V[:,j+1] - V[:,j+1]*T[j+1,j])
+        # check old A*V_j-1 - V_j-1*T
+        conv = abs(new-old)
+        print("\nNew convergence:", conv)
+        old = new
+        @printf("\n (<v%i|v%i>) = %f", j, j, T[j+1,j])
+        if conv < 10E-3
+            @printf("\n Converged at %i iteration \n", j)
+            Tm = T[1:j, 1:j]
+            return Tm, V
+            break
+        end
+        
+        #if T[j+1, j] < 10E-8
+            #@printf("Converged at %i iteration", j)
+        #    break
+        #end 
     end
 
     #make T into symmetric matrix of shape (m,m)
     Tm = T[1:m, 1:m]
-
-    #confirm Lanczos decomposition
-    e = zeros(Float64, m)
-    e[m] = 1
-    #T[m, m-1]
-    #value = norm(matrix*V[:,1:m] - V[:,1:m]*Tm) - T[m, m-1]*(dot(V[:,1:m], e))
-    #value
     return Tm, V
 end
 #={{{=#
