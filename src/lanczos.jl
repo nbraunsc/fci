@@ -24,7 +24,7 @@ function lanczos(matrix, b, m=12)
     #normalze next vector
     T[2,1] = norm(w)
     V[:,2] = w/T[2,1]
-
+    print("B values:\n")
     for j = 2:m
         #make T symmetric
         println(T[j, j-1])
