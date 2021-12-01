@@ -20,14 +20,15 @@ function lanczos(matrix, b, m=12)
     w = matrix*V[:,1]
     #orthogonalise
     T[1,1] = dot(w,V[:,1])
-    @printf("eigenvalue %f \n", T[1,1])
     w = w - T[1,1]*V[:,1]
     #normalze next vector
     T[2,1] = norm(w)
     V[:,2] = w/T[2,1]
-    old = norm(matrix*V[:,1] - V[:,1]*T[2,1])
+
     for j = 2:m
         #make T symmetric
+        println(T[j, j-1])
+        
         T[j-1, j] = T[j, j-1]
         
         #next vector
@@ -47,26 +48,15 @@ function lanczos(matrix, b, m=12)
         #normalize
         T[j+1, j] = norm(w)
         V[:,j+1] = w/T[j+1, j]
-        
+
         #convergence check
-        # A*V_j - V_j*T
-        new = norm(matrix*V[:,j+1] - V[:,j+1]*T[j+1,j])
-        # check old A*V_j-1 - V_j-1*T
-        conv = abs(new-old)
-        print("\nNew convergence:", conv)
-        old = new
-        @printf("\n (<v%i|v%i>) = %f", j, j, T[j+1,j])
-        if conv < 10E-3
-            @printf("\n Converged at %i iteration \n", j)
+        if T[j+1, j] < 10E-8
+            @printf("\n\nConverged at %i iteration \n", j)
+            print("\n", T[j+1, j])
             Tm = T[1:j, 1:j]
             return Tm, V
             break
-        end
-        
-        #if T[j+1, j] < 10E-8
-            #@printf("Converged at %i iteration", j)
-        #    break
-        #end 
+        end 
     end
 
     #make T into symmetric matrix of shape (m,m)
