@@ -3,6 +3,7 @@ using Plots
 using LinearAlgebra
 using Printf
 using Revise
+using fci
 
 #n = 500
 #m = 12
@@ -24,7 +25,7 @@ function lanczos(matrix, b, m=12)
     #normalze next vector
     T[2,1] = norm(w)
     V[:,2] = w/T[2,1]
-    print("B values:\n")
+    print("B values: trying \n")
     for j = 2:m
         #make T symmetric
         println(T[j, j-1])
