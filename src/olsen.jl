@@ -4,14 +4,16 @@ using PyCall
 using NPZ
 using Printf
 using Combinatorics
+using LinearAlgebra
 
 #orbs = 3
 #nalpha = 2
 #nbeta = 1
-function diagonalize(orbs, nalpha, nbeta)
+function diagonalize(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos
     int1e = npzread("/Users/nicole/code/fci/src/data/int1e.npy")
     int2e = npzread("/Users/nicole/code/fci/src/data/int2e.npy")
+    cimatrix = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
     yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
     
     #get all configs
@@ -23,19 +25,23 @@ function diagonalize(orbs, nalpha, nbeta)
     beta_configs = get_all_configs(configb)
 
     #get H components
-    H_alpha = get_H_same(alpha_configs, nalpha, orbs, yalpha, int1e, int2e)
-    H_beta = get_H_same(beta_configs, nbeta, orbs, ybeta, int1e, int2e)
-    H_mixed = ([alpha_configs, beta_configs], [nalpha, nbeta], orbs, [yalpha, ybeta], int2e)
-   
-    b = zeros(size(H_mixed)[1])
-    b[1] = 1
+    Ha = sigma1(alpha_configs, nalpha, orbs, yalpha, int1e, int2e)
+    display(Ha)
+    #H_alpha = get_H_same(alpha_configs, nalpha, orbs, yalpha, int1e, int2e)
+    #H_beta = get_H_same(beta_configs, nbeta, orbs, ybeta, int1e, int2e)
+    #H_mixed = get_H_mixed([alpha_configs, beta_configs], [nalpha, nbeta], orbs, [yalpha, ybeta], int2e)
+    
+    #b = zeros(size(H_mixed)[1])
+    #b[1] = 1
+    b = rand(Float64, size(H_mixed)[1])
     #initalize empty matrices for T and V
     T = zeros(Float64, m+1, m)
-    V = zeros(Float64, size(matrix)[1], m+1)
+    V = zeros(Float64, size(H_mixed)[1], m+1)
     #normalize start vector
     V[:,1] = b/norm(b)
     #next vector
     w = get_sigma(H_alpha, H_beta, H_mixed, V[:,1])
+
     #w = matrix*V[:,1]
     #orthogonalise
     T[1,1] = dot(w,V[:,1])
@@ -121,13 +127,13 @@ function make_xy(norbs, nalpha, nbeta)
 end
 
 function get_all_configs(config)
-    #get all possible configs from a given start config
+    #get all possible configs from a given start config{{{
     all_configs = unique(collect(permutations(config, size(config)[1])))
     configs = []
     for i in 1:size(all_configs)[1]
         A = findall(!iszero, all_configs[i])
         push!(configs, A)
-    end
+    end#=}}}=#
     return configs
 end
 
@@ -149,12 +155,53 @@ function get_index(config, y, orbs)
             index += y[start[1], start[2]]
         end
     end#=}}}=#
-    println("index:", Int8(index))
+    #println("index:", Int8(index))
     return Int8(index)
 end
 
+function sigma1(configs, nelec, norbs, y_matrix, int1e, int2e)
+    ##### indexing in incorrect!!!
+    ndets = Int8(factorial(norbs) / (factorial(nelec)*factorial(norbs-nelec)))
+    orbs = [1:norbs;]
+    Ha = zeros(ndets, ndets)
+    I_idx = 0
+    for I in configs
+        #I_idx = get_index(I, y_matrix, norbs)
+        I_idx += 1
+        println("Config index: ", I_idx)
+        F = zeros(ndets)
+        vir = filter!(x->!(x in I), orbs)
+        for i in I
+            for a in vir
+                config_single, sign_s = next_config(deepcopy(I), [i,a])
+                config_single_idx = get_index(config_single, y_matrix, norbs)
+                println("single excit", config_single, config_single_idx)
+                F[config_single_idx] = F[config_single_idx] + sign_s*one_elec(config_single, int1e, i,a) 
+                F[config_single_idx] = F[config_single_idx] + sign_s*two_elec(config_single, int2e, i,a)
+                println(F)
+                
+                for j in I
+                    if j != i
+                        for b in vir
+                            if b != a
+                                config_double, sign_d = next_config(deepcopy(config_single), [j, b])
+                                config_double_idx = get_index(config_double, y_matrix, norbs)
+                                F[config_double_idx] = F[config_double_idx] + sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
+                                #println(F)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        println("F: ", F)
+        Ha[:,I_idx] .= F
+    end
+    return Ha
+end
+
 function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
-    #neleczo                                             is number of same spin electrons so alpha or beta{{{
+    #nelec is number of same spin electrons so alpha or beta{{{
     #norbs are number of orbitals
     #configs = list of all same spin configs of form: [1,4,5] orbital indexing for occupied orbs
     ndets = Int8(factorial(norbs) / (factorial(nelec)*factorial(norbs-nelec)))
@@ -176,18 +223,24 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
         #single excitations
         for i in I
             for a in vir
-                config_single, sign_s = next_config(i, a, I)
+                config_single, sign_s = next_config(deepcopy(I), [i,a])
+                println(config_single)
                 config_single_idx = get_index(config_single, y_matrix, norbs)
                 println("single")
                 H_spin[config_single_idx, I_idx] += sign_s*one_elec(config_single, int1e, i,a) 
                 H_spin[config_single_idx, I_idx] += sign_s*two_elec(config_single, int2e, i,a)
                 
+                println("config I: ", I)
                 #double excitations
                 for j in I
+                    println("j:", j, " i:", i)
                     if j != i
+                        println(j, "!=", i)
                         for b in vir
+                            println("b: ", b, "a: ", a)
                             if b != a
-                                config_double, sign_d = next_config(j, b, config_single)
+                                println(b, "!=", a)
+                                config_double, sign_d = next_config(deepcopy(config_single), [j, b])
                                 config_double_idx = get_index(config_double, y_matrix, norbs)
                                 println("double")
                                 H_spin[config_double_idx, I_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
@@ -201,14 +254,17 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
     return H_spin
 end
 
-
 function next_config(config, positions)
-    #apply creation operator to the string{{{
+    #applzoy creation operator to the string{{{
     #get new index of string and store in lookup table
     #config is orbital indexing in ascending order
     #positions [i,a] meaning electron in orb_i went to orb_a
+    #println("config: ", config)
+    #println("positions: ", positions)
     spot = first(findall(x->x==positions[1], config))
+    #println("spot: ", spot)
     config[spot] = positions[2]
+    #println("new config: ", config)
     sign = -1#=}}}=#
     return config, sign
 end
@@ -230,10 +286,10 @@ end
 function two_elec(config, int2e, i=0, a=0, j=0, b=0)
     #Anti symmetry included! compute the two electron contribution{{{
     g = 0
-    println("\n", i,a,j,b)
+    #println("\n", i,a,j,b)
     if i == 0 && a == 0 && j == 0 && b == 0 
         #sum over all electrons (diag term)
-        println("diagonal in two e")
+        #println("diagonal in two e")
         for n in config
             for m in config
                 if m > n
@@ -242,35 +298,36 @@ function two_elec(config, int2e, i=0, a=0, j=0, b=0)
                 end
             end
         end
+    end
 
     if i!= 0 && a!=0 && j==0
         #single excitation 
-        println("single")
+        #println("single")
         for m in config
             g += int2e[m,m,i,a]
             g -= int2e[m,i,m,a]
         end
+    end
 
     if i!= 0 && a!=0 && j!=0 && b!=0
         #double excitation
-        println("double in two elec")
+        #println("double in two elec")
         g += int2e[i, j, a, b]
         g -= int2e[i, a, j, b]#=}}}=#
-    println("g", g)
+    #println("g", g)
     end
     return g
 end
-end
-
-
+    
 function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
     #configs = [alpha_configs, beta_configs]{{{
     #nelec = [n_alpha, n_beta]
     #y_matrix = [y_alpha, y_beta]
-    orbs = [1:norbs]
+    orbs = [1:norbs;]
     ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
     ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
-    sigma = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
+    size_sig = Int8(ndets_a*ndets_b)
+    sigma = zeros(size_sig, size_sig)
 
     for I in configs[1]  #alpha configs
         vir_I = filter!(x->!(x in I), orbs)
@@ -281,11 +338,11 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
                     for j in J
                         for b in vir_J
                             #i think ill have some double counting in these
-                            I_prim, signi = next_config(i, a, I)
-                            J_prim, signj = next_config(j, b, J)
-                            I_prim_idx = get_index(I_prim, y_matrix[1])
-                            J_prim_idx = get_index(J_prim, y_matrix[2])
-                            sigma[I_prim_idx, J_prim_idx] += int2e(i, j, a, b)
+                            I_prim, signi = next_config(deepcopy(I), [i, a])
+                            J_prim, signj = next_config(deepcopy(J), [j, b])
+                            I_prim_idx = get_index(I_prim, y_matrix[1], norbs)
+                            J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
+                            sigma[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, j, a, b]
                         end
                     end
                 end
@@ -296,13 +353,10 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
 end
 
 function get_sigma(Ha, Hb, Hmixed,  vector)
-    sigma1 = Ha*reshape(vector, (size(Ha)[1], size(Hb)[1]))
-    sigma2 = Hb*reshape(vector, (size(Hb)[1], size(Ha)[1]))
-    sigma3 = H_mixed*vector
+    b = reshape(vector, (size(Ha)[1], size(Hb)[1]))
+    sigma1 = reshape(-Ha*b, (size(Hmixed)[1], 1))
+    sigma2 = reshape(-Hb*transpose(b), (size(Hmixed)[1], 1))
+    sigma3 = -Hmixed*vector
     sigma = sigma1 + sigma2 + sigma3
     return sigma
 end
-
-
-end
-
