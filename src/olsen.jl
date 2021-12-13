@@ -6,15 +6,16 @@ using Printf
 using Combinatorics
 using LinearAlgebra
 
-#orbs = 3
-#nalpha = 2
-#nbeta = 1
+#orbs = 5
+#nalpha = 3
+#nbeta = 2
 function diagonalize(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos
-    int1e = npzread("/Users/nicole/code/fci/src/data/int1e.npy")
-    int2e = npzread("/Users/nicole/code/fci/src/data/int2e.npy")
-    cimatrix = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
-    H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full.npy")
+    int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
+    int2e1 = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
+    #cimatrix = npzread("/Users/nicole/code/fci/src/data/cimatrix_4.npy")
+    int2e = zeros(size(int2e1))
+    H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
     yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
     
     #get all configs
@@ -29,18 +30,27 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     H_alpha = get_H_same(alpha_configs, nalpha, orbs, yalpha, int1e, int2e)
     H_beta = get_H_same(beta_configs, nbeta, orbs, ybeta, int1e, int2e)
     H_mixed = get_H_mixed([alpha_configs, beta_configs], [nalpha, nbeta], orbs, [yalpha, ybeta], int2e)
-    
+   
+    H_alpha[abs.(H_alpha) .< 1e-14] .= 0
+    H_beta[abs.(H_beta) .< 1e-14] .= 0
+    H_pyscf[abs.(H_pyscf) .< 1e-14] .= 0
+
     display(H_alpha)
     display(H_beta)
     #display(H_mixed[1:10, 1:10])
     Ia = Matrix{Float64}(I, size(H_alpha))
     Ib = Matrix{Float64}(I, size(H_beta))
-    display(diag(kron(H_alpha, Ib)))
-    display(diag(kron(Ia, H_beta)))
-    display(diag(H_mixed))
+    #println("\nH_alpha")
+    #display(kron(H_alpha, Ib))
+    #println("\nH_beta:")
+    #display(kron(Ia, H_beta))
+    #display(diag(H_mixed))
     H = kron(H_alpha, Ib) + kron(Ia, H_beta) + H_mixed 
-    display(H[1:10, 1:10])
-    display(H_pyscf[1:10, 1:10])
+    #display(H)
+    println("H Pyscf")
+    display(H_pyscf)
+    println("\nH_alpha")
+    display(H_alpha)
 
     #b = zeros(size(H_mixed)[1])
     #b[1] = 1
@@ -109,22 +119,30 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
         F = zeros(ndets)
         orbs = [1:norbs;]
         vir = filter!(x->!(x in I), orbs)
-        F[I_idx] = one_elec(I, int1e)
-        F[I_idx] = two_elec(I, int2e)
+        println("diag in H")
+        F[I_idx] += one_elec(I, int1e)
+        F[I_idx] += two_elec(I, int2e)
+        println(I_idx)
+        println(F)
+        #single excit
         for i in I
             for a in vir
+                println("single in H")
                 config_single, sign_s = next_config(deepcopy(I), [i,a])
                 config_single_idx = get_index(config_single, y_matrix, norbs)
-                F[config_single_idx] = F[config_single_idx] + sign_s*one_elec(config_single, int1e, i,a) 
-                F[config_single_idx] = F[config_single_idx] + sign_s*two_elec(config_single, int2e, i,a)
+                println("sign_s: ", sign_s)
+                println(sign_s*(one_elec(config_single, int1e, i,a)))
+                F[config_single_idx] += sign_s*(one_elec(config_single, int1e, i,a) + two_elec(config_single, int2e, i,a))
+                #F[config_single_idx] += sign_s*two_elec(config_single, int2e, i,a)
                 
+                #double excit
                 for j in I
-                    if j != i
+                    if j > i
                         for b in vir
-                            if b != a
+                            if b > a
                                 config_double, sign_d = next_config(deepcopy(config_single), [j, b])
                                 config_double_idx = get_index(config_double, y_matrix, norbs)
-                                F[config_double_idx] = F[config_double_idx] + sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
+                                F[config_double_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
                             end
                         end
                     end
@@ -132,7 +150,7 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
             end
         end
         Ha[:,I_idx] .= F
-        Ha[I_idx,:] .= F
+        #Ha[I_idx,:] .= F
     end#=}}}=#
     return Ha
 end
@@ -163,9 +181,10 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
                             J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
                             #println("I prim: ", I_prim, "index: ", I_prim_idx)
                             #println("J prim: ", J_prim, "index: ", J_prim_idx)
-                            Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, a, j, b]
-                            Hmixed[J_prim_idx, I_prim_idx] += signi*signj*int2e[i, a, j, b]
-                            #Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, j, a, b]
+                            #Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, a, j, b]
+                            #Hmixed[J_prim_idx, I_prim_idx] += signi*signj*int2e[i, a, j, b]
+                            Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, j, a, b]
+                            Hmixed[J_prim_idx, I_prim_idx] += Hmixed[I_prim_idx, J_prim_idx]
                             #println("int2e contribution:", int2e[i,a,j,b])
                         end
                     end
@@ -176,12 +195,50 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
     return Hmixed
 end
 
+function get_sigma3(configs, nelec, norbs, y_matrix, int2e, vector)
+    #configs = [alpha_configs, beta_configs]{{{
+    #nelec = [n_alpha, n_beta]
+    #y_matrix = [y_alpha, y_beta]
+    ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
+    ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
+    size_mixed = Int8(ndets_a*ndets_b)
+    sigma3 = zeros(size_mixed, 1)
 
-function get_sigma(Ha, Hb, Hmixed,  vector)
+    for I in configs[1]  #alpha configs
+        orbs = [1:norbs;]
+        vir_I = filter!(x->!(x in I), orbs)
+        for i in I
+            for a in vir_I
+                for J in configs[2]     #beta configs
+                    orbs2 = [1:norbs;]
+                    vir_J = filter!(x->!(x in J), orbs2)
+                    for j in J
+                        for b in vir_J
+                            #i think ill have some double counting in these
+                            I_prim, signi = next_config(deepcopy(I), [i, a])
+                            J_prim, signj = next_config(deepcopy(J), [j, b])
+                            I_prim_idx = get_index(I_prim, y_matrix[1], norbs)
+                            J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
+                            #println("I prim: ", I_prim, "index: ", I_prim_idx)
+                            #println("J prim: ", J_prim, "index: ", J_prim_idx)
+                            #Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, a, j, b]
+                            #Hmixed[J_prim_idx, I_prim_idx] += signi*signj*int2e[i, a, j, b]
+                            sigma3[I_prim_idx] += signi*signj*int2e[i, j, a, b]*vector[J_prim_idx]
+                        end
+                    end
+                end
+            end
+        end
+    end#=}}}=#
+    return sigma3
+end
+
+function get_sigma(Ha, Hb, Hmixed, vector)
     b = reshape(vector, (size(Ha)[1], size(Hb)[1]))
     sigma1 = reshape(-Ha*b, (size(Hmixed)[1], 1))
     sigma2 = reshape(-Hb*transpose(b), (size(Hmixed)[1], 1))
-    sigma3 = -Hmixed*vector
+    sigma3 = get_sigma3(configs, nelec, norbs, y_matrix, int2e, vector)
+    #sigma3 = -Hmixed*vector
     sigma = sigma1 + sigma2 + sigma3
     return sigma
 end
@@ -261,13 +318,31 @@ function next_config(config, positions)
     #get new index of string and store in lookup table
     #config is orbital indexing in ascending order
     #positions [i,a] meaning electron in orb_i went to orb_a
-    #println("config: ", config)
+    println("config: ", config)
     #println("positions: ", positions)
+    org_config = deepcopy(config)
+
+    diff = abs(positions[1] - positions[2])
+    if iseven(diff)
+        sign = 1
+    else
+        sign = -1
+    end
+    
+
+    #println(positions)
     spot = first(findall(x->x==positions[1], config))
     #println("spot: ", spot)
     config[spot] = positions[2]
-    #println("new config: ", config)
-    sign = -1#=}}}=#
+    
+    new_config = sort(config)
+    println("new config sorted: ", new_config)
+    org_config[positions[1]]
+
+    println("new config: ", config)
+    println("sign: ", sign)#=}}}=#
+    
+
     return config, sign
 end
 
@@ -275,13 +350,18 @@ function one_elec(config, int1e, i=0, a=0)
     h = 0 #={{{=#
     if i == 0
         #sum over all electrons (diag term)
+        println("diag term in one elec")
         for m in config
             h += int1e[m, m]
+            #println(h)
         end
     else
+        println("single excit in one elec")
         #only get single excitation contributation
         h += int1e[i,a]
+        println("int1e:", int1e[i,a])
     end#=}}}=#
+    #println(h)
     return h
 end
 
@@ -295,10 +375,10 @@ function two_elec(config, int2e, i=0, a=0, j=0, b=0)
         for n in config
             for m in config
                 if m > n
-                    #g += int2e[n,n,m,m]
-                    #g -= int2e[n,m,n,m]
-                    g -= int2e[n,n,m,m]
-                    g += int2e[n,m,n,m]
+                    g += int2e[n,n,m,m]
+                    g -= int2e[n,m,n,m]
+                    #g -= int2e[n,n,m,m]
+                    #g += int2e[n,m,n,m]
                 end
             end
         end
@@ -308,20 +388,20 @@ function two_elec(config, int2e, i=0, a=0, j=0, b=0)
         #single excitation 
         #println("single")
         for m in config
-            #g += int2e[m,m,i,a]
-            #g -= int2e[m,i,m,a]
-            g -= int2e[m,m,i,a]
-            g += int2e[m,i,m,a]
+            g += int2e[m,m,i,a]
+            g -= int2e[m,i,m,a]
+            #g -= int2e[m,m,i,a]
+            #g += int2e[m,i,m,a]
         end
     end
 
     if i!= 0 && a!=0 && j!=0 && b!=0
         #double excitation
         #println("double in two elec")
-        #g += int2e[i, j, a, b]
-        #g -= int2e[i, a, j, b]
-        g -= int2e[i, j, a, b]
-        g += int2e[i, a, j, b]
+        g += int2e[i, j, a, b]
+        g -= int2e[i, a, j, b]
+        #g -= int2e[i, j, a, b]
+        #g += int2e[i, a, j, b]
     end#=}}}=#
     return g
 end
