@@ -141,7 +141,7 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
                 for j in I
                     if j > i
                         for b in vir
-                            if b > a
+                            if b != a
                                 config_double, sign_d = next_config(deepcopy(config_single), [j, b])
                                 config_double_idx = get_index(config_double, y_matrix, norbs)
                                 F[config_double_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
@@ -421,4 +421,29 @@ function two_elec(config, int2e, i=0, a=0, j=0, b=0)
     end#=}}}=#
     return g
 end
+
+function bubbleSort(arr)
+    n = size(arr)[1]
+ 
+    # Traverse through all array elements
+    for i in 1:n+1
+    #for i in 1:n
+ 
+        # Last i elements are already in place
+        for j in 1:n-i-1
+ 
+            # traverse the array from 0 to n-i-1
+            # Swap if the element found is greater
+            # than the next element
+            if arr[j] > arr[j+1] 
+                arr[j], arr[j+1] = arr[j+1], arr[j]
+ 
+# Driver code to test above
+arr = [64, 34, 25, 12, 22, 11, 90]
+ 
+bubbleSort(arr)
+ 
+print ("Sorted array is:")
+for i in range(len(arr)):
+    print ("%d" %arr[i]),
 
