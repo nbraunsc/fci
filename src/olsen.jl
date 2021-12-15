@@ -35,8 +35,8 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     H_beta[abs.(H_beta) .< 1e-14] .= 0
     H_pyscf[abs.(H_pyscf) .< 1e-14] .= 0
 
-    display(H_alpha)
-    display(H_beta)
+    #display(H_alpha)
+    #display(H_beta)
     #display(H_mixed[1:10, 1:10])
     Ia = Matrix{Float64}(I, size(H_alpha))
     Ib = Matrix{Float64}(I, size(H_beta))
@@ -51,6 +51,9 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     display(H_pyscf)
     println("\nH_alpha")
     display(H_alpha)
+    
+    println("\nH_beta")
+    display(H_beta)
 
     #b = zeros(size(H_mixed)[1])
     #b[1] = 1
@@ -127,12 +130,11 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
         #single excit
         for i in I
             for a in vir
-                println("single in H")
+                println("\nsingle in H")
                 config_single, sign_s = next_config(deepcopy(I), [i,a])
                 config_single_idx = get_index(config_single, y_matrix, norbs)
-                println("sign_s: ", sign_s)
-                println(sign_s*(one_elec(config_single, int1e, i,a)))
-                F[config_single_idx] += sign_s*(one_elec(config_single, int1e, i,a) + two_elec(config_single, int2e, i,a))
+                println("Index position: ", I_idx, config_single_idx)
+                F[config_single_idx] += sign_s*(one_elec(config_single, int1e, i, a) + two_elec(config_single, int2e, i,a))
                 #F[config_single_idx] += sign_s*two_elec(config_single, int2e, i,a)
                 
                 #double excit
@@ -318,8 +320,6 @@ function next_config(config, positions)
     #get new index of string and store in lookup table
     #config is orbital indexing in ascending order
     #positions [i,a] meaning electron in orb_i went to orb_a
-    println("config: ", config)
-    #println("positions: ", positions)
     org_config = deepcopy(config)
 
     diff = abs(positions[1] - positions[2])
@@ -328,21 +328,37 @@ function next_config(config, positions)
     else
         sign = -1
     end
-    
 
-    #println(positions)
     spot = first(findall(x->x==positions[1], config))
-    #println("spot: ", spot)
     config[spot] = positions[2]
     
-    new_config = sort(config)
-    println("new config sorted: ", new_config)
-    org_config[positions[1]]
+    sort_new = sort(config)
+    if sort_new == config
+        #already in ascending order, return sign from diff
+        return config, sign
+    else
+        if positions[1] < positions[2]
+            new_spot = first(findall(x->x==positions[2], sort_new))
+            new_array = findall(x->x>=positions[1], sort_new[1:new_spot-1])
+            num = size(new_array)[1]
+            if iseven(num)
+                sign=1
+            else
+                sign=-1
+            end
 
-    println("new config: ", config)
-    println("sign: ", sign)#=}}}=#
-    
-
+        else
+            #positions[1] > position[2]
+            new_spot = first(findall(x->x==positions[2], sort_new))
+            new_array = findall(x->x<=positions[1], sort_new[new_spot+1:size(sort_new)[1]])
+            num = size(new_array)[1]
+            if iseven(num)
+                sign=1
+            else
+                sign=-1
+            end
+        end
+    end#=}}}=#
     return config, sign
 end
 
