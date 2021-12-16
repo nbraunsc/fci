@@ -22,13 +22,8 @@ function bubbleSort(arr)
     return arr, count
 end
 
-# Driver code to test above
 arr = [64, 34, 25, 12, 22, 11, 90]
- 
+
 arr, count = bubbleSort(arr)
- 
-println("Sorted array is:")
-for i in 1:size(arr)[1]
-    println(arr[i])
-end
-println("count:", count)
+print(arr)
+print(count)

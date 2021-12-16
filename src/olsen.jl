@@ -12,9 +12,9 @@ using LinearAlgebra
 function diagonalize(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos
     int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
-    int2e1 = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
+    int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
     #cimatrix = npzread("/Users/nicole/code/fci/src/data/cimatrix_4.npy")
-    int2e = zeros(size(int2e1))
+    #int2e = zeros(size(int2e1))
     H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
     yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
     
@@ -33,22 +33,28 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
    
     H_alpha[abs.(H_alpha) .< 1e-14] .= 0
     H_beta[abs.(H_beta) .< 1e-14] .= 0
+    H_mixed[abs.(H_mixed) .< 1e-14] .= 0
     H_pyscf[abs.(H_pyscf) .< 1e-14] .= 0
 
     #display(H_alpha)
     #display(H_beta)
     #display(H_mixed[1:10, 1:10])
-    Ia = Matrix{Float64}(I, size(H_alpha))
-    Ib = Matrix{Float64}(I, size(H_beta))
     #println("\nH_alpha")
     #display(kron(H_alpha, Ib))
     #println("\nH_beta:")
     #display(kron(Ia, H_beta))
     #display(diag(H_mixed))
+    display(H_mixed)
+
+    Ia = Matrix{Float64}(I, size(H_alpha))
+    Ib = Matrix{Float64}(I, size(H_beta))
     H = kron(H_alpha, Ib) + kron(Ia, H_beta) + H_mixed 
-    #display(H)
+    #println("my H:")
+    display(H)
+
     println("H Pyscf")
     display(H_pyscf)
+    
     println("\nH_alpha")
     display(H_alpha)
     
@@ -64,7 +70,7 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     #normalize start vector
     V[:,1] = b/norm(b)
     #next vector
-    w = get_sigma(H_alpha, H_beta, H_mixed, V[:,1])
+    w = get_sigma(H_alpha, H_beta, V[:,1])
 
     #w = matrix*V[:,1]
     #orthogonalise
@@ -122,18 +128,16 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
         F = zeros(ndets)
         orbs = [1:norbs;]
         vir = filter!(x->!(x in I), orbs)
-        println("diag in H")
+        #println("diag in H")
         F[I_idx] += one_elec(I, int1e)
         F[I_idx] += two_elec(I, int2e)
-        println(I_idx)
-        println(F)
         #single excit
         for i in I
             for a in vir
-                println("\nsingle in H")
-                config_single, sign_s = next_config(deepcopy(I), [i,a])
+                #println("\nsingle in H")
+                config_single, sorted_config, sign_s = next_config(deepcopy(I), [i,a])
                 config_single_idx = get_index(config_single, y_matrix, norbs)
-                println("Index position: ", I_idx, config_single_idx)
+                #println("Index position: ", I_idx, config_single_idx)
                 F[config_single_idx] += sign_s*(one_elec(config_single, int1e, i, a) + two_elec(config_single, int2e, i,a))
                 #F[config_single_idx] += sign_s*two_elec(config_single, int2e, i,a)
                 
@@ -142,7 +146,7 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
                     if j > i
                         for b in vir
                             if b != a
-                                config_double, sign_d = next_config(deepcopy(config_single), [j, b])
+                                config_double, sorted_double, sign_d = next_config(deepcopy(sorted_config), [j, b])
                                 config_double_idx = get_index(config_double, y_matrix, norbs)
                                 F[config_double_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
                             end
@@ -165,29 +169,37 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
     ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
     size_mixed = Int8(ndets_a*ndets_b)
     Hmixed = zeros(size_mixed, size_mixed)
+    alpha_dets = size(configs[1])[1]
 
-    for I in configs[1]  #alpha configs
+    for I in configs[1]  #alpha configs bra alpha
         orbs = [1:norbs;]
         vir_I = filter!(x->!(x in I), orbs)
+        I_idx = get_index(I, y_matrix[1], norbs)
         for i in I
-            for a in vir_I
-                for J in configs[2]     #beta configs
+            for a in vir_I      #ket alpha
+                for J in configs[2]     #beta configs bra beta
                     orbs2 = [1:norbs;]
                     vir_J = filter!(x->!(x in J), orbs2)
+                    J_idx = get_index(J, y_matrix[2], norbs)
                     for j in J
-                        for b in vir_J
+                        for b in vir_J  #ket beta
                             #i think ill have some double counting in these
-                            I_prim, signi = next_config(deepcopy(I), [i, a])
-                            J_prim, signj = next_config(deepcopy(J), [j, b])
+                            I_prim, sort_I, signi = next_config(deepcopy(I), [i, a])
+                            J_prim, sort_J, signj = next_config(deepcopy(J), [j, b])
                             I_prim_idx = get_index(I_prim, y_matrix[1], norbs)
                             J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
-                            #println("I prim: ", I_prim, "index: ", I_prim_idx)
-                            #println("J prim: ", J_prim, "index: ", J_prim_idx)
+                            row_idx = Int(J_idx*alpha_dets + I_idx)
+                            column_idx = Int(J_prim_idx*alpha_dets + I_prim_idx)
+                            #println("row : ", row_idx, "column: ", column_idx)
+                            #println("Index I: ", I_prim_idx, " Index J: ", J_prim_idx)
+                            #println("two electron comp iajb: ", int2e[i,a,j,b])
+                            #println("other two electron comp ijab: ", int2e[i,j,a,b])
                             #Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, a, j, b]
                             #Hmixed[J_prim_idx, I_prim_idx] += signi*signj*int2e[i, a, j, b]
-                            Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, j, a, b]
-                            Hmixed[J_prim_idx, I_prim_idx] += Hmixed[I_prim_idx, J_prim_idx]
-                            #println("int2e contribution:", int2e[i,a,j,b])
+                            #Hmixed[row_idx, column_idx] += signi*signj*int2e[i, j, a, b]
+                            #Hmixed[column_idx, row_idx] += Hmixed[row_idx, column_idx]
+                            #Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, j, a, b]
+                            #Hmixed[J_prim_idx, I_prim_idx] += Hmixed[I_prim_idx, J_prim_idx]
                         end
                     end
                 end
@@ -235,7 +247,7 @@ function get_sigma3(configs, nelec, norbs, y_matrix, int2e, vector)
     return sigma3
 end
 
-function get_sigma(Ha, Hb, Hmixed, vector)
+function get_sigma(Ha, Hb, vector)
     b = reshape(vector, (size(Ha)[1], size(Hb)[1]))
     sigma1 = reshape(-Ha*b, (size(Hmixed)[1], 1))
     sigma2 = reshape(-Hb*transpose(b), (size(Hmixed)[1], 1))
@@ -320,64 +332,62 @@ function next_config(config, positions)
     #get new index of string and store in lookup table
     #config is orbital indexing in ascending order
     #positions [i,a] meaning electron in orb_i went to orb_a
-    org_config = deepcopy(config)
-
-    diff = abs(positions[1] - positions[2])
-    if iseven(diff)
+    
+    spot = first(findall(x->x==positions[1], config))
+    config[spot] = positions[2]
+    
+    count, arr = bubble_sort(config)
+    if iseven(count)
         sign = 1
     else
         sign = -1
     end
 
-    spot = first(findall(x->x==positions[1], config))
-    config[spot] = positions[2]
     
-    sort_new = sort(config)
-    if sort_new == config
-        #already in ascending order, return sign from diff
-        return config, sign
-    else
-        if positions[1] < positions[2]
-            new_spot = first(findall(x->x==positions[2], sort_new))
-            new_array = findall(x->x>=positions[1], sort_new[1:new_spot-1])
-            num = size(new_array)[1]
-            if iseven(num)
-                sign=1
-            else
-                sign=-1
-            end
+    #sort_new = sort(config)
+    #if sort_new == config
+    #    #already in ascending order, return sign from diff
+    #    return config, sign
+    #else
+    #    if positions[1] < positions[2]
+    #        new_spot = first(findall(x->x==positions[2], sort_new))
+    #        new_array = findall(x->x>=positions[1], sort_new[1:new_spot-1])
+    #        num = size(new_array)[1]
+    #        if iseven(num)
+    #            sign=1
+    #        else
+    #            sign=-1
+    #        end
 
-        else
-            #positions[1] > position[2]
-            new_spot = first(findall(x->x==positions[2], sort_new))
-            new_array = findall(x->x<=positions[1], sort_new[new_spot+1:size(sort_new)[1]])
-            num = size(new_array)[1]
-            if iseven(num)
-                sign=1
-            else
-                sign=-1
-            end
-        end
-    end#=}}}=#
-    return config, sign
+    #    else
+    #        #positions[1] > position[2]
+    #        new_spot = first(findall(x->x==positions[2], sort_new))
+    #        new_array = findall(x->x<=positions[1], sort_new[new_spot+1:size(sort_new)[1]])
+    #        num = size(new_array)[1]
+    #        if iseven(num)
+    #            sign=1
+    #        else
+    #            sign=-1
+    #        end
+    #    end
+    #end#=}}}=#
+    return config, arr, sign
 end
 
 function one_elec(config, int1e, i=0, a=0)
     h = 0 #={{{=#
     if i == 0
         #sum over all electrons (diag term)
-        println("diag term in one elec")
+        #println("diag term in one elec")
         for m in config
             h += int1e[m, m]
             #println(h)
         end
     else
-        println("single excit in one elec")
+        #println("single excit in one elec")
         #only get single excitation contributation
         h += int1e[i,a]
-        println("int1e:", int1e[i,a])
     end#=}}}=#
-    #println(h)
     return h
 end
 
@@ -414,36 +424,28 @@ function two_elec(config, int2e, i=0, a=0, j=0, b=0)
     if i!= 0 && a!=0 && j!=0 && b!=0
         #double excitation
         #println("double in two elec")
-        g += int2e[i, j, a, b]
-        g -= int2e[i, a, j, b]
-        #g -= int2e[i, j, a, b]
-        #g += int2e[i, a, j, b]
+        #g += int2e[i, j, a, b]
+        #g -= int2e[i, a, j, b]
+        g -= int2e[i, j, a, b]
+        g += int2e[i, a, j, b]
     end#=}}}=#
     return g
 end
 
-function bubbleSort(arr)
-    n = size(arr)[1]
+function bubble_sort(arr)
+    n = size(arr)[1]#={{{=#
+    count = 0
  
     # Traverse through all array elements
-    for i in 1:n+1
-    #for i in 1:n
- 
+    for i in 1:n-1
+        #println(i) 
         # Last i elements are already in place
-        for j in 1:n-i-1
- 
-            # traverse the array from 0 to n-i-1
-            # Swap if the element found is greater
-            # than the next element
-            if arr[j] > arr[j+1] 
-                arr[j], arr[j+1] = arr[j+1], arr[j]
- 
-# Driver code to test above
-arr = [64, 34, 25, 12, 22, 11, 90]
- 
-bubbleSort(arr)
- 
-print ("Sorted array is:")
-for i in range(len(arr)):
-    print ("%d" %arr[i]),
+        # Swap if the element found is greater
+        if arr[i] > arr[i+1] 
+           count += 1
+           arr[i], arr[i+1] = arr[i+1], arr[i]
+        end
+    end
+    return count, arr#=}}}=#
+end
 
