@@ -76,15 +76,11 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     display(diff)
     println("Trace: ", tr(diff))
     println(diag(diff))
-    #println("columns missing in above:")
-    #display(diff[:,12:24])
-
     #println(H_pyscf[13,1], " ", H_pyscf[19,1])
     #println(H[13,1], " ", H[19,1])
     #println(diff[13,1], " ", diff[19,1])
-
     
-    
+    #={{{=#
 
     #b = zeros(size(H_mixed)[1])
     #b[1] = 1
@@ -142,7 +138,7 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
 
     #make T into symmetric matrix of shape (m,m)
     Tm = T[1:m, 1:m]
-    return Tm, V
+    return Tm, V#=}}}=#
 end
 
 function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
@@ -185,50 +181,6 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
         #Ha[I_idx,:] .= F
     end#=}}}=#
     return Ha
-end
-
-function old_get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
-    #configs = [alpha_configs, beta_configs]{{{
-    #nelec = [n_alpha, n_beta]
-    #y_matrix = [y_alpha, y_beta]
-    ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
-    ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
-    size_mixed = Int(ndets_a*ndets_b)
-    Hmixed = zeros(size_mixed, size_mixed)
-    alpha_dets = size(configs[1])[1]
-
-    for I in configs[1]  #alpha configs bra alpha
-        orbs = [1:norbs;]
-        vir_I = filter!(x->!(x in I), orbs)
-        I_idx = get_index(I, y_matrix[1], norbs)
-        for i in I
-            for a in vir_I      #ket alpha
-                for J in configs[2]     #beta configs bra beta
-                    orbs2 = [1:norbs;]
-                    vir_J = filter!(x->!(x in J), orbs2)
-                    J_idx = get_index(J, y_matrix[2], norbs)
-                    for j in J
-                        for b in vir_J  #ket beta
-                            #i think ill have some double counting in these
-                            I_prim, sort_I, signi = excit_config(deepcopy(I), [i, a])
-                            J_prim, sort_J, signj = excit_config(deepcopy(J), [j, b])
-                            I_prim_idx = get_index(I_prim, y_matrix[1], norbs)
-                            J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
-                            row_idx = Int(J_idx*alpha_dets + I_idx)
-                            column_idx = Int(J_prim_idx*alpha_dets + I_prim_idx)
-                            #println("row : ", row_idx, "column: ", column_idx)
-                            #println("Index I: ", I_prim_idx, " Index J: ", J_prim_idx)
-                            #println("two electron comp iajb: ", int2e[i,a,j,b])
-                            #println("other two electron comp ijab: ", int2e[i,j,a,b])
-                            Hmixed[row_idx, column_idx] += signi*signj*int2e[i, j, a, b]
-                            #Hmixed[column_idx, row_idx] += Hmixed[row_idx, column_idx]
-                        end
-                    end
-                end
-            end
-        end
-    end#=}}}=#
-    return Hmixed
 end
 
 function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
@@ -496,3 +448,47 @@ function bubble_sort(arr)
     return count, arr#=}}}=#
 end
 
+
+function old_get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
+    #configs = [alpha_configs, beta_configs]{{{
+    #nelec = [n_alpha, n_beta]
+    #y_matrix = [y_alpha, y_beta]
+    ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
+    ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
+    size_mixed = Int(ndets_a*ndets_b)
+    Hmixed = zeros(size_mixed, size_mixed)
+    alpha_dets = size(configs[1])[1]
+
+    for I in configs[1]  #alpha configs bra alpha
+        orbs = [1:norbs;]
+        vir_I = filter!(x->!(x in I), orbs)
+        I_idx = get_index(I, y_matrix[1], norbs)
+        for i in I
+            for a in vir_I      #ket alpha
+                for J in configs[2]     #beta configs bra beta
+                    orbs2 = [1:norbs;]
+                    vir_J = filter!(x->!(x in J), orbs2)
+                    J_idx = get_index(J, y_matrix[2], norbs)
+                    for j in J
+                        for b in vir_J  #ket beta
+                            #i think ill have some double counting in these
+                            I_prim, sort_I, signi = excit_config(deepcopy(I), [i, a])
+                            J_prim, sort_J, signj = excit_config(deepcopy(J), [j, b])
+                            I_prim_idx = get_index(I_prim, y_matrix[1], norbs)
+                            J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
+                            row_idx = Int(J_idx*alpha_dets + I_idx)
+                            column_idx = Int(J_prim_idx*alpha_dets + I_prim_idx)
+                            #println("row : ", row_idx, "column: ", column_idx)
+                            #println("Index I: ", I_prim_idx, " Index J: ", J_prim_idx)
+                            #println("two electron comp iajb: ", int2e[i,a,j,b])
+                            #println("other two electron comp ijab: ", int2e[i,j,a,b])
+                            Hmixed[row_idx, column_idx] += signi*signj*int2e[i, j, a, b]
+                            #Hmixed[column_idx, row_idx] += Hmixed[row_idx, column_idx]
+                        end
+                    end
+                end
+            end
+        end
+    end#=}}}=#
+    return Hmixed
+end
