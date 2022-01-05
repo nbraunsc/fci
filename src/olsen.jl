@@ -40,6 +40,9 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
 
     Ia = Matrix{Float64}(I, size(H_alpha))
     Ib = Matrix{Float64}(I, size(H_beta))
+    #H = kron(H_alpha, Ib) 
+    #H = kron(Ia, H_beta) 
+    
     H = kron(H_alpha, Ib) + kron(Ia, H_beta) + H_mixed 
 
     println("\nH_alpha")
@@ -61,18 +64,21 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     #println("H beta full")
     #display(full_b)
     
-    println("my H:")
+    println("\nmy H:")
     display(H)
 
-    println("H Pyscf")
+    println("\nH Pyscf")
     display(H_pyscf)
     
+    println("\nDiff Between PYSCF and MY H")
     diff = H_pyscf - H
-    diff[abs.(diff) .< 1e-7] .= 0
+    diff[abs.(diff) .< 1e-14] .= 0
     display(diff)
-    println("columns missing in above:")
-    display(diff[:,12:24])
-    
+    println("Trace: ", tr(diff))
+    println(diag(diff))
+    #println("columns missing in above:")
+    #display(diff[:,12:24])
+
     #println(H_pyscf[13,1], " ", H_pyscf[19,1])
     #println(H[13,1], " ", H[19,1])
     #println(diff[13,1], " ", diff[19,1])
@@ -140,7 +146,7 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
 end
 
 function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
-    ndets = Int8(factorial(norbs) / (factorial(nelec)*factorial(norbs-nelec)))#={{{=#
+    ndets = Int(factorial(norbs) / (factorial(nelec)*factorial(norbs-nelec)))#={{{=#
     Ha = zeros(ndets, ndets)
     for I in configs
         I_idx = get_index(I, y_matrix, norbs)
@@ -157,8 +163,8 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
                 config_single, sorted_config, sign_s = excit_config(deepcopy(I), [i,a])
                 config_single_idx = get_index(config_single, y_matrix, norbs)
                 #println("Index position: ", I_idx, config_single_idx)
-                F[config_single_idx] += sign_s*(one_elec(config_single, int1e, i, a) + two_elec(config_single, int2e, i,a))
-                #F[config_single_idx] += sign_s*two_elec(config_single, int2e, i,a)
+                F[config_single_idx] += sign_s*(one_elec(I, int1e, i, a) + two_elec(I, int2e, i,a))
+                #F[config_single_idx] += sign_s*(one_elec(config_single, int1e, i, a) + two_elec(config_single, int2e, i,a))
                 
                 #double excit
                 for j in I
@@ -167,7 +173,8 @@ function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
                             if b != a
                                 config_double, sorted_double, sign_d = excit_config(deepcopy(sorted_config), [j, b])
                                 config_double_idx = get_index(config_double, y_matrix, norbs)
-                                F[config_double_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
+                                F[config_double_idx] += sign_d*sign_s*two_elec(I, int2e, i, a, j, b)
+                                #F[config_double_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
                             end
                         end
                     end
@@ -186,7 +193,7 @@ function old_get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
     #y_matrix = [y_alpha, y_beta]
     ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
     ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
-    size_mixed = Int8(ndets_a*ndets_b)
+    size_mixed = Int(ndets_a*ndets_b)
     Hmixed = zeros(size_mixed, size_mixed)
     alpha_dets = size(configs[1])[1]
 
@@ -230,7 +237,7 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
     #y_matrix = [y_alpha, y_beta]
     ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
     ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
-    size_mixed = Int8(ndets_a*ndets_b)
+    size_mixed = Int(ndets_a*ndets_b)
     Hmixed = zeros(size_mixed, size_mixed)
 
     for I in configs[1]  #bra alpha
@@ -242,45 +249,34 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
             vir_J = filter!(x->!(x in J), orbs2)
             J_idx = get_index(J, y_matrix[2], norbs)-1
             row_idx = Int(J_idx*ndets_a + I_idx)+1
-            println("row index: ", row_idx)
+            #println("row index: ", row_idx)
             for i in I
                 for j in J
                     #diagonal term i was missing (see lines 130-132 in slater_condon2.py)
                     Hmixed[row_idx, row_idx] += int2e[i,i,j,j]
+
                     for a in vir_I      #ket alpha
                         I_prim, sort_I, signi = excit_config(deepcopy(I), [i, a])
                         I_prim_idx = get_index(I_prim, y_matrix[1], norbs)-1
+
                         #single alpha with beta config (see lines 149-151 in slater_condon2.py)
                         column_idx_sig = Int(J_idx*ndets_a + I_prim_idx)+1
                         for n in J
                             Hmixed[row_idx, column_idx_sig] += 0.5*signi*int2e[n,n,i,a]
                         end
-
+                        
                         for b in vir_J  #ket beta
                             J_prim, sort_J, signj = excit_config(deepcopy(J), [j, b])
                             J_prim_idx = get_index(J_prim, y_matrix[2], norbs)-1
-                            
+                    
                             #single beta with alpha config (see lines 166-168 in slater_condon2.py)
                             column_idx_b = Int(J_prim_idx*ndets_a + I_idx)+1
                             for m in I
-                                Hmixed[row_idx, column_idx_b] += 0.5*signj*int2e[m,m,j,b]
+                                Hmixed[row_idx, column_idx_b] += 0.5*0.5*signj*int2e[m,m,j,b]
                             end
 
-                            #println("alpha :", I)
-                            #println("i->a ", i, a)
-                            #println("beta :", J)
-                            #println("j->b ", j, b)
-                            #println("I_prim: ", I_prim, " J_prim: ", J_prim)
-                            #println("Indexes I: ", I_idx, " J: ", J_idx, " I_prim: ", I_prim_idx, " J_prim: ", J_prim_idx)
                             column_idx = Int(J_prim_idx*ndets_a + I_prim_idx)+1
-                            #println("column index: ", column_idx)
-                            #println("row : ", row_idx, "column: ", column_idx)
-                            #println("Index I: ", I_prim_idx, " Index J: ", J_prim_idx)
-                            #println("two electron comp iajb: ", int2e[i,a,j,b])
-                            #println("other two electron comp ijab: ", int2e[i,j,a,b])
-                            #Hmixed[row_idx, column_idx] += signi*signj*int2e[i, j, a, b]
                             Hmixed[row_idx, column_idx] += signi*signj*int2e[i, a, j, b]
-                            #Hmixed[column_idx+1, row_idx+1] += Hmixed[row_idx+1, column_idx+1]
                         end
                     end
                 end
@@ -296,7 +292,7 @@ function get_sigma3(configs, nelec, norbs, y_matrix, int2e, vector)
     #y_matrix = [y_alpha, y_beta]
     ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
     ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
-    size_mixed = Int8(ndets_a*ndets_b)
+    size_mixed = Int(ndets_a*ndets_b)
     sigma3 = zeros(size_mixed, 1)
 
     for I in configs[1]  #alpha configs
@@ -405,7 +401,7 @@ function get_index(config, y, orbs)
             index += y[start[1], start[2]]
         end
     end#=}}}=#
-    return Int8(index)
+    return Int(index)
 end
 
 function excit_config(config, positions)
@@ -430,12 +426,12 @@ function one_elec(config, int1e, i=0, a=0)
     h = 0 #={{{=#
     if i == 0
         #sum over all electrons (diag term)
-        println("diag term in one elec")
+        #println("diag term in one elec")
         for m in config
             h += int1e[m, m]
         end
     else
-        println("single excit in one elec")
+        #println("single excit in one elec")
         #only get single excitation contributation
         h += int1e[i,a]
     end#=}}}=#
@@ -445,29 +441,20 @@ end
 function two_elec(config, int2e, i=0, a=0, j=0, b=0)
     #Anti symmetry included! compute the two electron contribution{{{
     g = 0
-    #println("\n", i,a,j,b)
+    
+    #Diagonal Terms
     if i == 0 && a == 0 && j == 0 && b == 0 
         #sum over all electrons (diag term)
-        println("diagonal in two e")
+        #println("diagonal in two e")
         for n = 1:size(config)[1]
             for m = n+1:size(config)[1]
                 g += int2e[config[n],config[n],config[m],config[m]]
                 g -= int2e[config[n],config[m],config[n],config[m]]
             end
         end
-        
-        #for n in config
-        #    for m in config
-        #        if m > n
-        #            g += int2e[n,n,m,m]
-        #            g -= int2e[n,m,n,m]
-        #            #g -= int2e[n,n,m,m]
-        #            #g += int2e[n,m,n,m]
-        #        end
-        #    end
-        #end
     end
 
+    #Single Excitation Terms
     if i!= 0 && a!=0 && j==0
         #single excitation 
         #println("single")
