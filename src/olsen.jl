@@ -5,6 +5,16 @@ using NPZ
 using Printf
 using Combinatorics
 using LinearAlgebra
+using StaticArrays
+
+mutable struct DeterminantString
+    norbs::UInt8
+    nelec::UInt8
+    config::Vector{Int}
+    #config::MVector{N, Int}
+    index::UInt
+    label::UInt
+end
 
 #orbs = 5
 #nalpha = 3
@@ -24,12 +34,19 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     configb = zeros(orbs)
     configa[1:nalpha] .= 1
     configb[1:nbeta] .= 1
-    alpha_configs = get_all_configs(configa)
-    beta_configs = get_all_configs(configb)
+
+
+    alpha_configs = get_all_configs(configa, orbs)
+    beta_configs = get_all_configs(configb, orbs)
+    ndets_a = factorial(orbs)÷(factorial(nalpha)*factorial(orbs-nalpha))
+    ndets_b = factorial(orbs)÷(factorial(nbeta)*factorial(orbs-nbeta))
+    
+    #make lookup table
+    index_table_a, sign_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
 
     #get H components
-    H_alpha = get_H_same(alpha_configs, nalpha, orbs, yalpha, int1e, int2e)
-    H_beta = get_H_same(beta_configs, nbeta, orbs, ybeta, int1e, int2e)
+    H_alpha = get_H_same(alpha_configs, ndets_a, yalpha, int1e, int2e, index_table_a, sign_table_a)
+    H_beta = get_H_same(beta_configs, ndets_b, ybeta, int1e, int2e, index_table_b, sign_table_b)
     H_mixed = get_H_mixed([alpha_configs, beta_configs], [nalpha, nbeta], orbs, [yalpha, ybeta], int2e)
    
     H_alpha[abs.(H_alpha) .< 1e-14] .= 0
@@ -141,36 +158,69 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     return Tm, V#=}}}=#
 end
 
-function get_H_same(configs, nelec, norbs, y_matrix, int1e, int2e)
-    ndets = Int(factorial(norbs) / (factorial(nelec)*factorial(norbs-nelec)))#={{{=#
-    elec_count = (-1)^nelec
+
+function make_index_table(configs, ndets, y_matrix)
+    index_table = zeros(Int, configs[1].norbs, configs[1].norbs, ndets)#={{{=#
+    sign_table = trues(configs[1].norbs, configs[1].norbs, ndets)
+    orbs = [1:configs[1].norbs;]
+    for I in 1:ndets
+        vir = filter!(x->!(x in configs[I].config), orbs)
+        for p in configs[I].config
+            for q in vir
+                println(p, " ", q, " ", I)
+                println(index_table[p, q, I])
+                new_config, sorted_config, sign_s = excit_config(deepcopy(configs[I].config), [p,q])
+                println(new_config, typeof(new_config))
+                idx = get_index(new_config, y_matrix, configs[I].norbs)
+                index_table[p,q,I]=idx
+                if sign_s < 0
+                    sign_table[p,q,I]=false
+                end
+            end
+        end
+    end#=}}}=#
+    return index_table, sign_table
+end
+
+function get_H_same(configs, ndets, y_matrix, int1e, int2e, index_table, sign_table)
+    #ndets = factorial(norbs)÷(factorial(nelec)*factorial(norbs-nelec))#={{{=#
+    elec_count = (-1)^configs[1].nelec
     Ha = zeros(ndets, ndets)
     for I in configs
-        I_idx = get_index(I, y_matrix, norbs)
+        I_idx = get_index(I.config, y_matrix, I.norbs)
+        println(I.label)
         F = zeros(ndets)
-        orbs = [1:norbs;]
-        vir = filter!(x->!(x in I), orbs)
+        orbs = [1:I.norbs;]
+        vir = filter!(x->!(x in I.config), orbs)
         #println("diag in H")
-        F[I_idx] += elec_count*one_elec(I, int1e) + two_elec(I, int2e)
+        F[I_idx] += elec_count*(one_elec(I.config, int1e) + two_elec(I.config, int2e))
+        println(I.config[1])
         
         #single excit
-        for i in I
+        for i in I.config
             for a in vir
                 #println("\nsingle in H")
-                config_single, sorted_config, sign_s = excit_config(deepcopy(I), [i,a])
-                config_single_idx = get_index(config_single, y_matrix, norbs)
+                config_single, sorted_config, sign_s = excit_config(deepcopy(I.config), [i,a])
+                #### new indexing with lookup table is not working correctly!!!
+                config_single_idx = index_table[i,a,I.label]
+                idx = get_index(config_single, y_matrix, I.norbs)
+                if config_single_idx != idx
+                    println("ERROR")
+                    y=z
+                end
+
                 #println("Index position: ", I_idx, config_single_idx)
-                F[config_single_idx] += elec_count*sign_s*(one_elec(I, int1e, i, a) + two_elec(I, int2e, i,a))
+                F[config_single_idx] += elec_count*sign_s*(one_elec(I.config, int1e, i, a) + two_elec(I.config, int2e, i,a))
                 #F[config_single_idx] += sign_s*(one_elec(config_single, int1e, i, a) + two_elec(config_single, int2e, i,a))
                 
                 #double excit
-                for j in I
+                for j in I.config
                     if j > i
                         for b in vir
                             if b != a
                                 config_double, sorted_double, sign_d = excit_config(deepcopy(sorted_config), [j, b])
-                                config_double_idx = get_index(config_double, y_matrix, norbs)
-                                F[config_double_idx] += elec_count*sign_d*sign_s*two_elec(I, int2e, i, a, j, b)
+                                config_double_idx = get_index(config_double, y_matrix, I.norbs)
+                                F[config_double_idx] += elec_count*sign_d*sign_s*two_elec(I.config, int2e, i, a, j, b)
                                 #F[config_double_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
                             end
                         end
@@ -188,9 +238,9 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
     #configs = [alpha_configs, beta_configs]{{{
     #nelec = [n_alpha, n_beta]
     #y_matrix = [y_alpha, y_beta]
-    ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
-    ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
-    size_mixed = Int(ndets_a*ndets_b)
+    ndets_a = factorial(norbs)÷(factorial(nelec[1])*factorial(norbs-nelec[1])) 
+    ndets_b = factorial(norbs)÷(factorial(nelec[2])*factorial(norbs-nelec[2]))
+    size_mixed = ndets_a*ndets_b
     Hmixed = zeros(size_mixed, size_mixed)
     elec_a = (-1)^nelec[1]
     elec_b = (-1)^nelec[2]
@@ -203,7 +253,7 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
             orbs2 = [1:norbs;]
             vir_J = filter!(x->!(x in J), orbs2)
             J_idx = get_index(J, y_matrix[2], norbs)-1
-            row_idx = Int(J_idx*ndets_a + I_idx)+1
+            row_idx = J_idx*ndets_a + I_idx +1
             println("row index: ", row_idx)
             for i in I
                 for j in J
@@ -215,7 +265,7 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
                         I_prim_idx = get_index(I_prim, y_matrix[1], norbs)-1
 
                         #single alpha with beta config (see lines 149-151 in slater_condon2.py)
-                        column_idx_sig = Int(J_idx*ndets_a + I_prim_idx)+1
+                        column_idx_sig = J_idx*ndets_a + I_prim_idx+1
                         for n in J
                             Hmixed[row_idx, column_idx_sig] += elec_a*0.5*signi*int2e[n,n,i,a]
                         end
@@ -225,12 +275,12 @@ function get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
                             J_prim_idx = get_index(J_prim, y_matrix[2], norbs)-1
                     
                             #single beta with alpha config (see lines 166-168 in slater_condon2.py)
-                            column_idx_b = Int(J_prim_idx*ndets_a + I_idx)+1
+                            column_idx_b = J_prim_idx*ndets_a + I_idx+1
                             for m in I
                                 Hmixed[row_idx, column_idx_b] += elec_b*0.5*0.5*signj*int2e[m,m,j,b]
                             end
 
-                            column_idx = Int(J_prim_idx*ndets_a + I_prim_idx)+1
+                            column_idx = J_prim_idx*ndets_a + I_prim_idx+1
                             println("column index: ", column_idx)
                             println("IJI'J': ", I, J, I_prim, J_prim)
                             x=y
@@ -328,20 +378,22 @@ function make_xy(norbs, nalpha, nbeta)
     return yalpha, ybeta
 end
 
-function get_all_configs(config)
+function get_all_configs(config, norbs)
     #get all possible configs from a given start config{{{
+    nelecs = UInt8(size(config)[1])
     all_configs = unique(collect(permutations(config, size(config)[1])))
-    configs = []
+    configs = [] #empty Array
     for i in 1:size(all_configs)[1]
         A = findall(!iszero, all_configs[i])
-        push!(configs, A)
-    end#=}}}=#
+        push!(configs,DeterminantString(norbs, nelecs, A, 1, UInt(i))) 
+    end
+    #=}}}=#
     return configs
 end
 
-function get_index(config, y, orbs)
+function get_index(config, y, norbs)
     #config has to be orbital index form since it will turned into bit string form{{{
-    string = zeros(orbs)
+    string = zeros(Int8, norbs)
     string[config] .= 1
 
     #println("config: ", config)
@@ -349,17 +401,17 @@ function get_index(config, y, orbs)
     start = [1,1]
 
     for value in string
-        if value == 0.0
+        if value == 0
             #move down but dont add to index
             start[1] = start[1]+1
         end
-        if value == 1.0
+        if value == 1
             #move right and add value to index
             start[2] = start[2] + 1
             index += y[start[1], start[2]]
         end
     end#=}}}=#
-    return Int(index)
+    return UInt8(index)
 end
 
 function excit_config(config, positions)
