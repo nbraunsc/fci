@@ -422,6 +422,7 @@ function two_elec(config, int2e, i=0, a=0, j=0, b=0)
             else
                 g += int2e[m,m,i,a]
                 g -= int2e[m,i,m,a]
+                #from olsen paper i=k and a=l
             end
         end
     end
