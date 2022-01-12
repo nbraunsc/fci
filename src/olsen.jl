@@ -7,6 +7,8 @@ using Combinatorics
 using LinearAlgebra
 using StaticArrays
 
+np = pyimport("numpy")
+
 mutable struct DeterminantString
     norbs::UInt8
     nelec::UInt8
@@ -184,61 +186,42 @@ function get_H_same(configs, ndets, y_matrix, int1e, int2e, index_table, sign_ta
     #ndets = factorial(norbs)÷(factorial(nelec)*factorial(norbs-nelec))#={{{=#
     #elec_count = (-1)^configs[1].nelec
     Ha = zeros(ndets, ndets)
+    h_prime = int1e - 0.5.*np.einsum("kjjl", int2e)
+
     for I in configs
         I_idx = get_index(I.config, y_matrix, I.norbs)
         F = zeros(ndets)
         orbs = [1:I.norbs;]
         vir = filter!(x->!(x in I.config), orbs)
-        #println("diag in H")
-        println(I)
-        #F[I_idx] += one_elec(I.config, int1e) + two_elec(I.config, int2e)
-        #F[I_idx] += one_elec(I.config, int1e)
         
-        g=0
-        for n = 1:size(I.config)[1]
-            for m = n+1:size(I.config)[1]
-                g += int2e[I.config[n],I.config[n],I.config[m],I.config[m]]
-                #g -= int2e[I.config[n],I.config[m],I.config[n],I.config[m]]
+        #diagonal term
+        for m in I.config
+            F[I_idx] += int1e[m,m]
+            for n in I.config
+                if n>m
+                    F[I_idx] += int2e[m,m,n,n] - int2e[m,n,m,n]
+                end
             end
         end
-        #y=z
-        #F[I_idx] += one_elec(I.config, int1e) + 0.5*two_elec(I.config, int2e)
-        #F[I_idx] += elec_count*(one_elec(I.config, int1e) + elec_count*two_elec(I.config, int2e))
-        
+                
         #single excit
-        for i in I.config
-            for a in vir
-                #println("\nsingle in H")
-                config_single, sorted_config, sign_s = excit_config(deepcopy(I.config), [i,a])
-                config_single_idx = index_table[i,a,I.label]
-                #F[config_single_idx] += elec_count*sign_s*(one_elec(I.config, int1e, i, a) + elec_count*two_elec(I.config, int2e, i,a))
-                #F[config_single_idx] += sign_s*(one_elec(I.config, int1e, i, a) + two_elec(I.config, int2e, i,a))
-                
-                F[config_single_idx] += sign_s*(one_elec(I.config, int1e, i, a)) #h_kl
-                println("\nidx: ", I_idx)
-                println("config sig idx: ", config_single_idx)
-                println("single: ", config_single)
-                for k in I.config       
-                    F[config_single_idx] -= 0.5*sign_s*int2e[i,k,k,a]  # -1/2 sum_j (kj|jl)
-                end
-                
+        for k in I.config
+            for l in vir
+                config_single, sorted_config, sign_s = excit_config(deepcopy(I.config), [k,l])
+                config_single_idx = index_table[k,l,I.label]
+                F[config_single_idx] += sign_s*h_prime[k,l] #h_kl prime
+
                 #double excit
-                for j in config_single
-                    orbs2 = [1:I.norbs;]
-                    vir2 = filter!(x->!(x in config_single), orbs2)
-                #for j in I.config
-                    if j != a
-                        for b in vir2
-                            if b != i
-                                config_double, sorted_double, sign_d = excit_config(deepcopy(config_single), [j, b])
-                        #config_double, sorted_double, sign_d = excit_config(deepcopy(sorted_config), [j, b])
+                for i in I.config
+                    if i != k #if i not same electron that was just excited
+                        orbs2 = [1:I.norbs;]
+                        vir2 = filter!(x->!(x in config_single), orbs2)
+                        for j in vir2
+                            println(j)
+                            if j != l && j != k
+                                config_double, sorted_double, sign_d = excit_config(deepcopy(sorted_config), [i, j])
                                 config_double_idx = get_index(config_double, y_matrix, I.norbs)
-                        #F[config_double_idx] += elec_count*sign_d*sign_s*two_elec(I.config, int2e, i, a, j, b)
-                                F[config_double_idx] += sign_d*sign_s*int2e[j,b,i,a]
-                                println("config doub idx: ", config_double_idx)
-                                println("double: ", config_double)
-                        #F[config_double_idx] += 0.5*sign_d*sign_s*int2e[i, a, j, b]
-                                #F[config_double_idx] += sign_d*sign_s*two_elec(config_double, int2e, i, a, j, b)
+                                F[config_double_idx] += 0.5*sign_d*sign_s*int2e[i,j,k,l]
                             end
                         end
                     end
@@ -246,13 +229,12 @@ function get_H_same(configs, ndets, y_matrix, int1e, int2e, index_table, sign_ta
             end
         end
         Ha[:,I_idx] .= F
-        #Ha[I_idx,:] .= F
     end#=}}}=#
     return Ha
 end
 
 function get_H_mixed(configs, nelec, norbs, y_matrix, int1e, int2e, index_table_a, index_table_b)
-    #configs = [alpha_configs, beta_configs]{{{
+    #configs = [alpha_configzos, beta_configs]{{{
     #nelec = [n_alpha, n_beta]
     #y_matrix = [y_alpha, y_beta]
     ndets_a = factorial(norbs)÷(factorial(nelec[1])*factorial(norbs-nelec[1])) 
