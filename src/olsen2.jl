@@ -23,7 +23,7 @@ end
 #orbs = 5
 #nalpha = 3
 #nbeta = 2
-function diagonalize(orbs, nalpha, nbeta, m=12)
+function run_fci(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos{{{
     int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
@@ -46,13 +46,16 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     ndets_b = factorial(orbs)÷(factorial(nbeta)*factorial(orbs-nbeta))
     
     #make lookup table
-    index_table_a, sign_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
-    index_table_b, sign_table_b = make_index_table(beta_configs, ndets_b, ybeta) 
+    index_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
+    index_table_b = make_index_table(beta_configs, ndets_b, ybeta) 
+    
+    Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, orbs, index_table_a, yalpha, int1e, int2e)
+    Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, orbs, index_table_b, ybeta, int1e, int2e)
 
     #get H components
-    H_alpha = get_H_same(alpha_configs, ndets_a, yalpha, int1e, int2e, index_table_a, sign_table_a)
-    H_beta = get_H_same(beta_configs, ndets_b, ybeta, int1e, int2e, index_table_b, sign_table_b)
-    H_mixed = get_H_mixed([alpha_configs, beta_configs], [nalpha, nbeta], orbs, [yalpha, ybeta], int1e, int2e, index_table_a, index_table_b)
+    H_alpha = compute_ss_terms_full(ndets_a, orbs, int1e, int2e, index_table_a)
+    H_beta = compute_ss_terms_full(ndets_b, orbs, int1e, int2e, index_table_b)
+    H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int2e, index_table_a, index_table_b)
    
     H_alpha[abs.(H_alpha) .< 1e-14] .= 0
     H_beta[abs.(H_beta) .< 1e-14] .= 0
@@ -70,7 +73,8 @@ function diagonalize(orbs, nalpha, nbeta, m=12)
     Hmat += kron(H_beta, Ia)
     Hmat += H_mixed
     
-    H = .5*(Hmat+Hmat')
+    #H = .5*(Hmat+Hmat')
+    H = Hmat
     
     #H = kron(H_alpha, Ib) + kron(Ia, H_beta) + H_mixed 
 
@@ -172,7 +176,7 @@ end
 
 function make_index_table(configs, ndets, y_matrix)
     index_table = zeros(Int, configs[1].norbs, configs[1].norbs, ndets)#={{{=#
-    sign_table = trues(configs[1].norbs, configs[1].norbs, ndets)
+    #sign_table = trues(configs[1].norbs, configs[1].norbs, ndets)
     orbs = [1:configs[1].norbs;]
     for I in 1:ndets
         vir = filter!(x->!(x in configs[I].config), [1:configs[I].norbs;])
@@ -181,171 +185,139 @@ function make_index_table(configs, ndets, y_matrix)
                 new_config, sorted_config, sign_s = excit_config(deepcopy(configs[I].config), [p,q])
                 #println(new_config, typeof(new_config))
                 idx = get_index(new_config, y_matrix, configs[I].norbs)
-                index_table[p,q,I]=idx
-                if sign_s < 0
-                    sign_table[p,q,I]=false
-                end
+                index_table[p,q,I]=sign_s*idx
+                #if sign_s < 0
+                #    sign_table[p,q,I]=false
+                #end
             end
         end
     end#=}}}=#
-    return index_table, sign_table
+    return index_table#, sign_table
 end
 
-function get_H_same(configs, ndets, y_matrix, int1e, int2e, index_table, sign_table)
+function precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix, int1e, int2e)
+    Hout = zeros(ndets, ndets)
+    for K in 1:ndets
+        #  hpq p'q 
+        for p in 1:orbs
+            for q in 1:orbs
+                ket, sorted_ket, ket_sign = excit_config(deepcopy(configs[K].config), [p,q])
+                idx = get_index(ket, y_matrix, orbs)
+                println(idx)
+                L = idx + (K-1)*ndets
+                Hout[K,L] += ket_sign*int1e[p,q]
+            end
+        end
+
+        # <pq|rs> p'q'sr -> (pr|qs) 
+        for r in 1:orbs
+            for s in r+1:orbs
+                for p in 1:orbs
+                    for q in p+1:orbs
+                        ket1, sorted_ket, ket_sign = excit_config(deepcopy(configs[K].config), [p,q])
+                        ket2, sorted_ket2, ket_sign2 = excit_config(deepcopy(configs[K].config), [r,s])
+                        println(ket1)
+                        println(ket2)
+                        idx1 = get_index(ket1, y_matrix, orbs)
+                        idx2 = get_index(ket2, y_matrix, orbs)
+                        println(idx1, idx2)
+                        L = idx1 + (idx2-1)*ndets
+                        Hout[K, L] += ket_sign*ket_sign2*(int2e[p,r,q,s] - int2e[p,s,q,r])
+                    end
+                end
+            end
+        end
+    end
+    return Hout
+end
+
+
+
+function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table)
     #={{{=#
-    #elec_count = (-1)^configs[1].nelec
     Ha = zeros(ndets, ndets)
-    h_prime = int1e - 0.5*np.einsum("kjjl->kl", int2e)
-    #@einsum h[k,l] := int2e[k,j,j,l]
-    #h_prime = int1e - 0.5.*h
-    display(h_prime)
-                 
+    
     h1eff = deepcopy(int1e)
     @tensor begin
         h1eff[p,q] -= .5 * int2e[p,j,j,q]
     end
 
-    for I in configs #Ia or Ib, configs=list of all possible determinants
-        I_idx = get_index(I.config, y_matrix, I.norbs)
-        F = zeros(ndets)
-        orbs = [1:I.norbs;]
-        vir = filter!(x->!(x in I.config), orbs)
-        
-        #diagonal term not in olsen paper
-        for m in I.config
-            F[I_idx] += int1e[m,m]
-            for n in I.config
-                if n>m
-                    F[I_idx] += int2e[m,m,n,n] - int2e[m,n,m,n]
+    F = zeros(ndets)
+
+    for I in 1:ndets
+        F .= 0
+        for k in 1:norbs, l in 1:norbs
+            K = index_table[k,l,I]
+            if K == 0
+                continue
+            end
+            sign_kl = sign(K)
+            K=abs(K)
+            @inbounds F[K] += sign_kl*h1eff[k,l] #h_kl prime
+            for i in 1:norbs, j in 1:norbs
+                J=index_table[i,j,K]
+                if J == 0
+                    continue
+                end
+                sign_ij = sign(J)
+                J=abs(J)
+                if sign_kl == sign_ij
+                    @inbounds F[J] += .5 * int2e[i,j,k,l]
+                else
+                    @inbounds F[J] -= .5 * int2e[i,j,k,l]
                 end
             end
         end
-
-        #single excit
-        for k in I.config, l in vir
-            #annihlate electron in orb k
-            config_single, sorted_config, sign_s = excit_config(deepcopy(I.config), [k,l])
-            config_single_idx = index_table[k,l,I.label]
-            @inbounds F[config_single_idx] += sign_s*h1eff[k,l] #h_kl prime
-            #@inbounds F[config_single_idx] += sign_s*h_prime[k,l] #h_kl prime
-
-            #double excit
-            for i in config_single, j in vir  #annihlate electron (from single excited config) in orb i != l (previouslly excited electron)
-                if i != l && j!=l
-                    config_double, sorted_double, sign_d = excit_config(deepcopy(sorted_config), [i, j])
-                    config_double_idx = get_index(config_double, y_matrix, I.norbs)
-                    if sign_d == sign_s
-                        @inbounds F[config_double_idx] += .5 * int2e[i,k,j,l]
-                        #@inbounds F[config_double_idx] += .5 * int2e[i,j,k,l]
-                    else
-                        @inbounds F[config_double_idx] -= .5 * int2e[i,k,j,l]
-                        #@inbounds F[config_double_idx] -= .5 * int2e[i,j,k,l]
-                    end
-                end
-            end
-        end
-        #display(F)
-        Ha[:,I_idx] .= F
-    end#=}}}=#
+    Ha[:,I] .= F
+    end
     return Ha
 end
+        
+        ##diagonal term not in olsen paper
+        #for m in I.config
+        #    F[I_idx] += int1e[m,m]
+        #    for n in I.config
+        #        if n>m
+        #            F[I_idx] += int2e[m,m,n,n] - int2e[m,n,m,n]
+        #        end
+        #    end
+        #end
 
-function fermi_sym(alpha, beta)
-    unique = [findall(x->x!=i,beta) for i in alpha]
-    same = findall(x->x in beta, alpha)
-    #x,idx = setdiff(beta, alpha)
-    println(setdiff(beta, alpha))
-    #println(same)
-    #println(unique)
-end
-
-
-function get_H_mixed(configs, nelec, norbs, y_matrix, int1e, int2e, index_table_a, index_table_b)
-    #configs = [alpha_configzos, beta_configs]{{{
-    #nelec = [n_alpha, n_beta]
-    #y_matrix = [y_alpha, y_beta]
-    ndets_a = factorial(norbs)÷(factorial(nelec[1])*factorial(norbs-nelec[1])) 
-    ndets_b = factorial(norbs)÷(factorial(nelec[2])*factorial(norbs-nelec[2]))
-    size_mixed = ndets_a*ndets_b
-    Hmixed = zeros(size_mixed, size_mixed)
-    elec_a = (-1)^nelec[1]
-    elec_b = (-1)^nelec[2]
-
-    for I in configs[1]  #bra alpha
-        orbs = [1:norbs;]
-        vir_I = filter!(x->!(x in I.config), orbs)
-        I_idx = get_index(I.config, y_matrix[1], norbs)#-1
-        for J in configs[2]     #bra beta
-            orbs2 = [1:norbs;]
-            vir_J = filter!(x->!(x in J.config), orbs2)
-            J_idx = get_index(J.config, y_matrix[2], norbs)#-1
-            row_idx = I_idx + (J_idx-1)*ndets_a
-            #row_idx = J_idx*ndets_a + I_idx +1
-            println("row index: ", row_idx)
-            
-            #diagonal??
-            #sign_ij =1
-            #for i in I.config
-            #    for j in J.config
-            #        #diagonal term i was missing (see lines 130-132 in slater_condon2.py)
-            #        Hmixed[row_idx, row_idx] += sign_ij*(int2e[i,i,j,j] - int2e[i,j,i,j])
-            #    end
-            #end
-
-            
-            for i in I.config
-                for a in vir_I      #ket alpha
-                    I_prim, sort_I, signi = excit_config(deepcopy(I.config), [i, a])
-                    I_prim_idx = index_table_a[i,a,I.label]#-1
-                        for j in J.config
-                            for b in vir_J  #ket beta
-                                J_prim, sort_J, signj = excit_config(deepcopy(J.config), [j, b])
-                                J_prim_idx = index_table_b[j,b,J.label]#-1
-                                column_idx = I_prim_idx + (J_prim_idx-1)*ndets_a
-                                #column_idx = J_prim_idx*ndets_a + I_prim_idx+1
-                                Hmixed[row_idx, column_idx] += signi*signj*int2e[i, j, a, b]
-                                #Hmixed[row_idx, column_idx] += signi*signj*int2e[i, a, j, b]
-                    #diagonal term i was missing (see lines 130-132 in slater_condon2.py)
-                    #Hmixed[row_idx, row_idx] += two_elec(I.config, int2e, i,i,j,j)
-                    #Hmixed[row_idx, row_idx] += 0.5*two_elec(I.config,i,j,i,j)
-                    #Hmixed[row_idx, row_idx] += one_elec(I.config, int1e) + one_elec(J.config, int1e) + 0.5*int2e[i,i,j,j]
-                    #Hmixed[row_idx, row_idx] += 0.5*elec_a*elec_b*int2e[i,i,j,j]
-
-                    ###for a in vir_I      #ket alpha
-                    #    I_prim, sort_I, signi = excit_config(deepcopy(I.config), [i, a])
-                    #    I_prim_idx = index_table_a[i,a,I.label]-1
-
-                    #    #single alpha with beta config (see lines 149-151 in slater_condon2.py)
-                    #    column_idx_sig = J_idx*ndets_a + I_prim_idx+1
-                    #    for n in J.config
-                    #        Hmixed[row_idx, column_idx_sig] += 0.5*signi*int2e[n,n,i,a]
-                    #        #Hmixed[row_idx, column_idx_sig] += elec_a*0.5*signi*int2e[n,n,i,a]
-                    #    end
-                    #    
-                    #    for b in vir_J  #ket beta
-                    #        J_prim, sort_J, signj = excit_config(deepcopy(J.config), [j, b])
-                    #        J_prim_idx = index_table_b[j,b,J.label]-1
-                    #
-                    #        #single beta with alpha config (see lines 166-168 in slater_condon2.py)
-                    #        column_idx_b = J_prim_idx*ndets_a + I_idx+1
-                    #        for m in I.config
-                    #            Hmixed[row_idx, column_idx_b] += 0.5*0.5*signj*int2e[m,m,j,b]
-                    #            #Hmixed[row_idx, column_idx_b] += elec_b*0.5*0.5*signj*int2e[m,m,j,b]
-                    #        end
-
-                    #        column_idx = J_prim_idx*ndets_a + I_prim_idx+1
-                    #        #println("column index: ", column_idx)
-                    #        #println("IJI'J': ", I, J, I_prim, J_prim)
-                    #        #x=y
-                    #        Hmixed[row_idx, column_idx] += signi*signj*int2e[i, a, j, b]
-                    #        #Hmixed[row_idx, column_idx] += elec_a*elec_b*signi*signj*int2e[i, a, j, b]
+function compute_ab_terms_full(ndets_a, ndets_b, norbs, int2e, index_table_a, index_table_b)
+    dim = ndets_a*ndets_b
+    Hmat = zeros(dim, dim)
+    
+    for Kb in 1:ndets_b 
+        for Ka in 1:ndets_a
+            K = Ka + (Kb-1)*ndets_a
+            for r in 1:norbs
+                for p in 1:norbs
+                    La = index_table_a[p,r,Ka]
+                    if La == 0
+                        continue
+                    end
+                    sign_a = sign(La)
+                    La = abs(La)
+                    Lb=1
+                    sign_b =1
+                    L=1
+                    for s in 1:norbs
+                        for q in 1:norbs
+                            Lb = index_table_b[q,s,Kb]
+                            if Lb == 0
+                                continue
+                            end
+                            sign_b = sign(Lb)
+                            Lb = abs(Lb)
+                            L = La + (Lb-1)*ndets_a
+                            Hmat[K,L] += int2e[p,r,q,s]*sign_a*sign_b
                         end
                     end
                 end
             end
         end
     end#=}}}=#
-    return Hmixed
+    return Hmat
 end
 
 function get_sigma3(configs, nelec, norbs, y_matrix, int2e, vector)
