@@ -49,14 +49,20 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     index_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
     index_table_b = make_index_table(beta_configs, ndets_b, ybeta) 
     
-    Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, orbs, index_table_a, yalpha, int1e, int2e)
-    Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, orbs, index_table_b, ybeta, int1e, int2e)
+    Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, orbs, index_table_a, yalpha, int1e, int2e, nalpha)
+    Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, orbs, index_table_b, ybeta, int1e, int2e, nbeta)
 
     #get H components
-    H_alpha = compute_ss_terms_full(ndets_a, orbs, int1e, int2e, index_table_a)
-    H_beta = compute_ss_terms_full(ndets_b, orbs, int1e, int2e, index_table_b)
-    H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int2e, index_table_a, index_table_b)
-   
+    #H_alpha = compute_ss_terms_full(ndets_a, orbs, int1e, int2e, index_table_a, alpha_configs, yalpha)
+    #H_beta = compute_ss_terms_full(ndets_b, orbs, int1e, int2e, index_table_b, beta_configs, ybeta)
+    H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
+    #H_mixed = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
+    
+    #H_alpha = Ha_diag + H_alpha
+    #H_beta = Hb_diag + H_beta
+    H_alpha = Ha_diag
+    H_beta = Hb_diag
+
     H_alpha[abs.(H_alpha) .< 1e-14] .= 0
     H_beta[abs.(H_beta) .< 1e-14] .= 0
     H_mixed[abs.(H_mixed) .< 1e-14] .= 0
@@ -185,7 +191,8 @@ function make_index_table(configs, ndets, y_matrix)
                 new_config, sorted_config, sign_s = excit_config(deepcopy(configs[I].config), [p,q])
                 #println(new_config, typeof(new_config))
                 idx = get_index(new_config, y_matrix, configs[I].norbs)
-                index_table[p,q,I]=sign_s*idx
+                index_table[p,q,configs[I].label]=sign_s*idx
+                #index_table[p,q,I]=sign_s*idx
                 #if sign_s < 0
                 #    sign_table[p,q,I]=false
                 #end
@@ -195,46 +202,25 @@ function make_index_table(configs, ndets, y_matrix)
     return index_table#, sign_table
 end
 
-function precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix, int1e, int2e)
+function precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix, int1e, int2e, nelec)
     Hout = zeros(ndets, ndets)
     for K in 1:ndets
-        #  hpq p'q 
-        for p in 1:orbs
-            for q in 1:orbs
-                ket, sorted_ket, ket_sign = excit_config(deepcopy(configs[K].config), [p,q])
-                idx = get_index(ket, y_matrix, orbs)
-                println(idx)
-                L = idx + (K-1)*ndets
-                Hout[K,L] += ket_sign*int1e[p,q]
-            end
-        end
-
-        # <pq|rs> p'q'sr -> (pr|qs) 
-        for r in 1:orbs
-            for s in r+1:orbs
-                for p in 1:orbs
-                    for q in p+1:orbs
-                        ket1, sorted_ket, ket_sign = excit_config(deepcopy(configs[K].config), [p,q])
-                        ket2, sorted_ket2, ket_sign2 = excit_config(deepcopy(configs[K].config), [r,s])
-                        println(ket1)
-                        println(ket2)
-                        idx1 = get_index(ket1, y_matrix, orbs)
-                        idx2 = get_index(ket2, y_matrix, orbs)
-                        println(idx1, idx2)
-                        L = idx1 + (idx2-1)*ndets
-                        Hout[K, L] += ket_sign*ket_sign2*(int2e[p,r,q,s] - int2e[p,s,q,r])
-                    end
-                end
+        config = configs[K].config
+        idx = get_index(config, y_matrix, orbs)
+        for i in 1:nelec
+            Hout[idx,idx] += int1e[config[i], config[i]]
+            for j in i+1:nelec
+                Hout[idx,idx] += int2e[config[i], config[i], config[j], config[j]]
+                Hout[idx,idx] -= int2e[config[i], config[j], config[i], config[j]]
             end
         end
     end
     return Hout
 end
 
-
-
-function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table)
+function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs, y_matrix)
     #={{{=#
+    #something here adds to the diagonal when it shouldnt!!!
     Ha = zeros(ndets, ndets)
     
     h1eff = deepcopy(int1e)
@@ -245,76 +231,99 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table)
     F = zeros(ndets)
 
     for I in 1:ndets
+        idx = get_index(configs[I].config, y_matrix, norbs)
         F .= 0
+
         for k in 1:norbs, l in 1:norbs
-            K = index_table[k,l,I]
+            K = index_table[k,l,idx]
+            if K == idx
+                contine
+            end
+
             if K == 0
                 continue
             end
             sign_kl = sign(K)
             K=abs(K)
-            @inbounds F[K] += sign_kl*h1eff[k,l] #h_kl prime
+            F[K] += sign_kl*h1eff[k,l] #h_kl prime
+            #@inbounds F[K] += sign_kl*h1eff[k,l] #h_kl prime
+            
             for i in 1:norbs, j in 1:norbs
                 J=index_table[i,j,K]
+                if J == idx
+                    continue
+                end
+
                 if J == 0
                     continue
                 end
                 sign_ij = sign(J)
                 J=abs(J)
                 if sign_kl == sign_ij
-                    @inbounds F[J] += .5 * int2e[i,j,k,l]
+                    F[J] += .5 * int2e[i,j,k,l]
+                    #@inbounds F[J] += .5 * int2e[i,j,k,l]
                 else
-                    @inbounds F[J] -= .5 * int2e[i,j,k,l]
+                    F[J] -= .5 * int2e[i,j,k,l]
+                    #@inbounds F[J] -= .5 * int2e[i,j,k,l]
                 end
             end
         end
-    Ha[:,I] .= F
+        Ha[:,I] .= F
     end
     return Ha
 end
         
-        ##diagonal term not in olsen paper
-        #for m in I.config
-        #    F[I_idx] += int1e[m,m]
-        #    for n in I.config
-        #        if n>m
-        #            F[I_idx] += int2e[m,m,n,n] - int2e[m,n,m,n]
-        #        end
-        #    end
-        #end
-
-function compute_ab_terms_full(ndets_a, ndets_b, norbs, int2e, index_table_a, index_table_b)
+function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_table_a, index_table_b, alpha, beta, yalpha, ybeta)
     dim = ndets_a*ndets_b
     Hmat = zeros(dim, dim)
     
     for Kb in 1:ndets_b 
+        idxb = get_index(beta[Kb].config, ybeta, norbs)
         for Ka in 1:ndets_a
-            K = Ka + (Kb-1)*ndets_a
-            for r in 1:norbs
-                for p in 1:norbs
-                    La = index_table_a[p,r,Ka]
-                    if La == 0
-                        continue
-                    end
-                    sign_a = sign(La)
-                    La = abs(La)
-                    Lb=1
-                    sign_b =1
-                    L=1
-                    for s in 1:norbs
-                        for q in 1:norbs
-                            Lb = index_table_b[q,s,Kb]
-                            if Lb == 0
-                                continue
-                            end
-                            sign_b = sign(Lb)
-                            Lb = abs(Lb)
-                            L = La + (Lb-1)*ndets_a
-                            Hmat[K,L] += int2e[p,r,q,s]*sign_a*sign_b
-                        end
-                    end
+            idxa = get_index(alpha[Ka].config, yalpha, norbs)
+            #println("org configs ab: ", alpha[Ka].config, " ", beta[Kb].config)
+            K = idxa + (idxb-1)*ndets_a
+            #Diagonal part of mixed term!
+            for n in alpha[Ka].config
+                for l in beta[Kb].config
+                    Hmat[K,K] += int2e[n,n,l,l]
                 end
             end
+
+            #for r in 1:norbs
+            #    for p in 1:norbs
+            #        La = index_table_a[p,r,Ka]
+            #        if La == 0
+            #            continue
+            #        end
+            #        config_single, sorted_config, sign_s = excit_config(deepcopy(alpha[Ka].config), [p,r])
+            #        #println("alpha excit: ", config_single, " sign: ", sign_s)
+            #        #println("p->r: ", p,r)
+            #        sign_a = sign(La)
+            #        #println("sign from table: ", sign_a)
+            #        La = abs(La)
+            #        Lb=1
+            #        sign_b =1
+            #        L=1
+            #        for s in 1:norbs
+            #            for q in 1:norbs
+            #                Lb = index_table_b[q,s,Kb]
+            #                if Lb == 0
+            #                    continue
+            #                end
+            #                config_single1, sorted_config1, sign_s1 = excit_config(deepcopy(alpha[Kb].config), [q,s])
+            #                #println("beta excit: ", config_single1, " sign: ", sign_s1)
+            #                #println("q->s: ", q,s)
+            #                sign_b = sign(Lb)
+            #                #println("sign from table: ", sign_b)
+            #                Lb = abs(Lb)
+            #                L = La + (Lb-1)*ndets_a
+            #                println(K," ", L, " ", int2e[p,r,q,s])
+            #                Hmat[K,L] += int2e[p,r,q,s]*sign_a*sign_b
+            #            end
+            #        end
+            #    end
+            #end
         end
     end#=}}}=#
     return Hmat
@@ -455,6 +464,7 @@ function excit_config(config, positions)
     else
         sign = -1
     end#=}}}=#
+
     return config_org, arr, sign
 end
 
