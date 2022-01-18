@@ -231,8 +231,8 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
         F = zeros(ndets)
         orbs = [1:I.norbs;]
         vir = filter!(x->!(x in I.config), orbs)
-        println("\n I", I_idx)
-        println(I.config)
+        #println("\n I", I_idx)
+        #println(I.config)
        
         #single excitation
         for k in I.config
@@ -241,7 +241,7 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
                 config_single, sorted_config, sign_s = excit_config(deepcopy(I.config), [k,l])
                 config_single_idx = index_table[k,l,I.label]
                 #@inbounds F[abs(config_single_idx)] += sign_s*h1eff[k,l] #h_kl prime
-                println("adding single to spot: ", config_single_idx)
+                #println("adding single to spot: ", config_single_idx)
                 F[abs(config_single_idx)] += sign_s*int1e[k,l]
                 for m in I.config
                     if m!=k
@@ -302,7 +302,7 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
         #end
         #display(F)
         Ha[:,I_idx] .= F
-        display(Ha)
+        #display(Ha)
     end#=}}}=#
     return Ha
 end
@@ -407,56 +407,120 @@ end
 function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_table_a, index_table_b, alpha, beta, yalpha, ybeta)
     dim = ndets_a*ndets_b
     Hmat = zeros(dim, dim)
-    
-    for Kb in 1:ndets_b 
-        idxb = get_index(beta[Kb].config, ybeta, norbs)
-        for Ka in 1:ndets_a
-            idxa = get_index(alpha[Ka].config, yalpha, norbs)
-            K = idxa + (idxb-1)*ndets_a
 
-            #Diagonal part of mixed term!
-            for n in alpha[Ka].config
-                for l in beta[Kb].config
-                    Hmat[K,K] += int2e[n,n,l,l]
+    for Ka in alpha
+        Ka_idx = get_index(Ka.config, yalpha, norbs)
+        orbsa = [1:norbs;]
+        vira = filter!(x->!(x in Ka.config), orbsa)
+        for Kb in beta
+            Kb_idx = get_index(Kb.config, ybeta, norbs)
+            orbsb = [1:norbs;]
+            virb = filter!(x->!(x in Kb.config), orbsb)
+            K = Ka_idx + (Kb_idx-1)*ndets_a
+            
+            #diagonal part
+            for n in Ka.config
+                for l in Kb.config
+                    Hmat[K, K] += int2e[n,n,l,l]
+                end
+            end
+            
+            #excit alpha only
+            for p in Ka.config
+                for q in vira
+                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), [p,q])
+                    idxa = abs(index_table_a[p,q,Ka.label])
+                    Kprime = idxa + (Kb_idx-1)*ndets_a
+                    #alpha beta <ii|jj>
+                    for m in Kb.config
+                        Hmat[K,Kprime]+=sign_a*int2e[p,q,m,m]
+                    end
                 end
             end
 
-            for r in 1:norbs
-                for p in 1:norbs
-                    La = index_table_a[p,r,idxa]
-                    #La = index_table_a[p,r,Ka]
-                    if La == 0
-                        continue
+            #excit beta only
+            for r in Kb.config
+                for s in virb
+                    b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), [r,s])
+                    idxb = abs(index_table_b[r,s,Kb.label])
+                    Lprime = Ka_idx + (idxb-1)*ndets_a
+                    
+                    #alpha beta <ii|jj>
+                    for n in Ka.config
+                        Hmat[K,Lprime]+=sign_b*int2e[r,s,n,n]
                     end
-                    #config_single, sorted_config, sign_s = excit_config(deepcopy(alpha[Ka].config), [p,r])
-                    #println("alpha excit: ", config_single, " sign: ", sign_s)
-                    #println("p->r: ", p,r)
-                    sign_a = sign(La)
-                    #println("sign from table: ", sign_a)
-                    La = abs(La)
-                    Lb=1
-                    sign_b =1
-                    L=1
-                    for s in 1:norbs
-                        for q in 1:norbs
-                            Lb = index_table_b[q,s,idxb]
-                            if Lb == 0
-                                continue
-                            end
-                            sign_b = sign(Lb)
-                            Lb = abs(Lb)
-                            L = La + (Lb-1)*ndets_a
-                            Hmat[K,L] += sign_a*sign_b*(int2e[p,q,r,s] - int2e[p,r,q,s])
-                            #Hmat[K,L] += sign_a*sign_b*(int2e[p,r,q,s] -int2e[p,q,r,s])
-                            #Hmat[K,L] += int2e[p,r,q,s]*sign_a*sign_b
+                end
+            end
+
+            #excit alpha and beta
+            for p in Ka.config
+                for q in vira
+                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), [p,q])
+                    idxa = abs(index_table_a[p,q,Ka.label])
+                    for r in Kb.config
+                        for s in virb
+                            b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), [r,s])
+                            idxb = abs(index_table_b[r,s,Kb.label])
+                            L = idxa + (idxb-1)*ndets_a
+                            Hmat[K,L] += sign_a*sign_b*(int2e[p,q,r,s])
                         end
                     end
                 end
             end
         end
-    end#=}}}=#
+    end
     return Hmat
 end
+
+
+    
+    #for Kb in 1:ndets_b 
+    #    idxb = get_index(beta[Kb].config, ybeta, norbs)
+    #    for Ka in 1:ndets_a
+    #        idxa = get_index(alpha[Ka].config, yalpha, norbs)
+    #        K = idxa + (idxb-1)*ndets_a
+
+    #        #Diagonal part of mixed term!
+    #        for n in alpha[Ka].config
+    #            for l in beta[Kb].config
+    #                Hmat[K,K] += int2e[n,n,l,l]
+    #            end
+    #        end
+
+    #        for r in 1:norbs
+    #            for p in 1:norbs
+    #                La = index_table_a[p,r,idxa]
+    #                #La = index_table_a[p,r,Ka]
+    #                if La == 0
+    #                    continue
+    #                end
+    #                #config_single, sorted_config, sign_s = excit_config(deepcopy(alpha[Ka].config), [p,r])
+    #                #println("alpha excit: ", config_single, " sign: ", sign_s)
+    #                #println("p->r: ", p,r)
+    #                sign_a = sign(La)
+    #                #println("sign from table: ", sign_a)
+    #                La = abs(La)
+    #                Lb=1
+    #                sign_b =1
+    #                L=1
+    #                for s in 1:norbs
+    #                    for q in 1:norbs
+    #                        Lb = index_table_b[q,s,idxb]
+    #                        if Lb == 0
+    #                            continue
+    #                        end
+    #                        sign_b = sign(Lb)
+    #                        Lb = abs(Lb)
+    #                        L = La + (Lb-1)*ndets_a
+    #                        Hmat[K,L] += sign_a*sign_b*(int2e[p,q,r,s] - int2e[p,r,q,s])
+    #                        #Hmat[K,L] += sign_a*sign_b*(int2e[p,r,q,s] -int2e[p,q,r,s])
+    #                        #Hmat[K,L] += int2e[p,r,q,s]*sign_a*sign_b
+    #                    end
+    #                end
+    #            end
+    #        end
+    #    end
+    #end#=}}}=#
 
 function get_sigma3(configs, nelec, norbs, y_matrix, int2e, vector)
     #configs = [alpha_configs, beta_configs]{{{
