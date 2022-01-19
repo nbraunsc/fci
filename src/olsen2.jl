@@ -11,6 +11,16 @@ using TensorOperations
 
 np = pyimport("numpy")
 
+h = npzread("/Users/nicole/code/fci/h1.npy")
+h4 = npzread("/Users/nicole/code/fci/h4.npy")
+h5 = npzread("/Users/nicole/code/fci/h5.npy")
+
+display(h)
+display(h4)
+add = h4+h
+diff = h5-add
+display(diff)
+y=z
 mutable struct DeterminantString
     norbs::UInt8
     nelec::UInt8
@@ -27,10 +37,9 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos{{{
     int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
-    
-    #cimatrix = npzread("/Users/nicole/code/fci/src/data/cimatrix_4.npy")
     #int2e = zeros(size(int2e1))
     H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
+    ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
     yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
     
     #get all configs
@@ -66,20 +75,24 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     H_beta[abs.(H_beta) .< 1e-14] .= 0
     H_mixed[abs.(H_mixed) .< 1e-14] .= 0
     H_pyscf[abs.(H_pyscf) .< 1e-14] .= 0
+    ci[abs.(ci) .< 1e-14] .= 0
 
 
     Ia = Matrix{Float64}(I, size(H_alpha))
     Ib = Matrix{Float64}(I, size(H_beta))
-    #H = kron(H_alpha, Ib) 
-    #H = kron(Ia, H_beta) 
+    Ha = kron(H_alpha, Ib) 
+    Hb = kron(Ia, H_beta) 
+    Ha[abs.(Ha) .< 1e-14] .= 0
+    Hb[abs.(Hb) .< 1e-14] .= 0
 
     Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
-    Hmat += kron(Ib, H_alpha)
-    Hmat += kron(H_beta, Ia)
-    Hmat += H_mixed
+    Hmat .+= kron(Ib, H_alpha)
+    Hmat .+= kron(H_beta, Ia)
+    Hmat .+= H_mixed
     
     #H = .5*(Hmat+Hmat')
     H = Hmat
+    npzwrite("h1.npy", H)
     
     #H = kron(H_alpha, Ib) + kron(Ia, H_beta) + H_mixed 
 
@@ -91,19 +104,41 @@ function run_fci(orbs, nalpha, nbeta, m=12)
 
     println("H mixed")
     display(H_mixed)
+    display(Ha)
+    display(Hb)
     
-    #full_a = kron(H_alpha, Ib)
-    #full_a[abs.(full_a) .< 1e-14] .=0
-    #println("H alpha full")
-    #display(full_a)
+    full_a = kron(Ib, H_alpha)
+    full_a[abs.(full_a) .< 1e-14] .=0
+    println("H alpha full")
+    display(full_a)
      
-    #full_b = kron(Ia, H_beta)
-    #full_b[abs.(full_b) .< 1e-14] .=0
-    #println("H beta full")
-    #display(full_b)
+    full_b = kron(H_beta, Ia)
+    full_b[abs.(full_b) .< 1e-14] .=0
+    println("H beta full")
+    display(full_b)
     
     println("\nmy H:")
     display(H)
+    
+    println("my ci:")
+    display(ci)
+
+    println("\n Diff between my ci and slater ci")
+    diff3 = ci-H
+    diff3[abs.(diff3) .< 1e-14] .= 0
+    display(diff3)
+    println(diag(diff3))
+
+    e = eigvals(H)
+    e2 = eigvals(ci)
+    e3 = eigvals(H_pyscf)
+    println(e)
+    println(e2)
+    println(e3)
+    println(e-e2)
+    println("\n")
+    println(e-e3)
+    y=z
 
     println("\nH Pyscf")
     display(H_pyscf)
@@ -114,6 +149,14 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     display(diff)
     println("Trace: ", tr(diff))
     println(diag(diff))
+
+    println("pyscf-ha-hb")
+    diffab = H_pyscf-kron(Ia, H_beta)-kron(H_alpha,Ib)
+    #diffab = H_pyscf-kron(Ib, H_alpha)-kron(H_beta,Ia)
+    diffab[abs.(diffab) .< 1e-14] .= 0
+    display(diffab)
+    display(H_mixed)
+
     #println(H_pyscf[13,1], " ", H_pyscf[19,1])
     #println(H[13,1], " ", H[19,1])
     #println(diff[13,1], " ", diff[19,1])}}}
@@ -262,10 +305,12 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
                                 double, sorted_d, sign_d = excit_config(deepcopy(sorted_s), [i,j])
                                 idx = get_index(double, y_matrix, I.norbs)
                                 if sign_d == sign_s
-                                    F[abs(idx)] += (int2e[i,j,k,l] - int2e[i,l,j,k])
+                                    #F[abs(idx)] += (int2e[i,j,k,l] - int2e[i,k,j,l])
+                                    F[abs(idx)] += (int2e[i,j,k,l] - int2e[i,l,j,k]) #one that works for closed
 
                                 else
-                                    F[abs(idx)] -= (int2e[i,j,k,l] - int2e[i,l,j,k])
+                                    #F[abs(idx)] -= (int2e[i,j,k,l] - int2e[i,k,j,l])
+                                    F[abs(idx)] -= (int2e[i,j,k,l] - int2e[i,l,j,k]) #one that works for closed
                                 end
                             end
                         end
@@ -308,7 +353,7 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
 end
       
 
-function compute_ss_terms(ndets, norbs, int1e, int2e, index_table, configs, y_matrix)
+function old_compute_ss_terms(ndets, norbs, int1e, int2e, index_table, configs, y_matrix)
     #something here adds to the diagonal when it shouldnt!!!{{{
     Ha = zeros(ndets, ndets)
     
@@ -416,11 +461,11 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
             Kb_idx = get_index(Kb.config, ybeta, norbs)
             orbsb = [1:norbs;]
             virb = filter!(x->!(x in Kb.config), orbsb)
-            K = Ka_idx + (Kb_idx-1)*ndets_a
+            K = Ka_idx + (Kb_idx-1)*ndets_a #works for closed shell
             
             #diagonal part
-            for n in Ka.config
-                for l in Kb.config
+            for l in Kb.config
+                for n in Ka.config
                     Hmat[K, K] += int2e[n,n,l,l]
                 end
             end
@@ -430,6 +475,17 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
                 for q in vira
                     a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), [p,q])
                     idxa = abs(index_table_a[p,q,Ka.label])
+                    idx_mine = get_index(sort_a, yalpha, norbs)
+                    if idxa!= idx_mine
+                        println("idexes dont match")
+                        y=z
+                    end
+                    if idxa == K
+                        println("diagonal term")
+                        y=z
+                    end
+
+
                     Kprime = idxa + (Kb_idx-1)*ndets_a
                     #alpha beta <ii|jj>
                     for m in Kb.config
@@ -443,6 +499,11 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
                 for s in virb
                     b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), [r,s])
                     idxb = abs(index_table_b[r,s,Kb.label])
+                    idx_mine = get_index(sort_b, ybeta, norbs)
+                    if idxb!= idx_mine
+                        println("idexes dont match")
+                        y=z
+                    end
                     Lprime = Ka_idx + (idxb-1)*ndets_a
                     
                     #alpha beta <ii|jj>
