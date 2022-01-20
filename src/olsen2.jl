@@ -20,8 +20,8 @@ mutable struct DeterminantString
     label::UInt
 end
 
-function run_fci(orbs, nalpha, nbeta, m=20)
-    #get eigenvalues from lanczos{{{
+function run_fci(orbs, nalpha, nbeta, m=12)
+    #get eigenvalues from lanczos
     int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
     H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
@@ -103,11 +103,11 @@ function run_fci(orbs, nalpha, nbeta, m=20)
     display(H_pyscf)
     
     println("\nDiff Between PYSCF and MY H")
-    diff = H_pyscf - H
-    diff[abs.(diff) .< 1e-14] .= 0
-    display(diff)
-    println("Trace: ", tr(diff))
-    println(diag(diff))
+    #diff = H_pyscf - H
+    #diff[abs.(diff) .< 1e-14] .= 0
+    #display(diff)
+    #println("Trace: ", tr(diff))
+    #println(diag(diff))
 
     e = sort(eigvals(H))
     e2 = eigvals(ci)
@@ -133,7 +133,6 @@ function run_fci(orbs, nalpha, nbeta, m=20)
     #println("\n Diff CI and pyscf")
     #display(diff_cipyscf)
     
-    #={{{=#
     
     dim = ndets_a*ndets_b
     b = zeros(dim)
@@ -144,35 +143,22 @@ function run_fci(orbs, nalpha, nbeta, m=20)
     #normalize start vector
     V[:,1] = b/norm(b)
     #next vector
-    #w = matrix*V[:,1]
-    w = get_sigma(H_alpha, H_beta, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
+    #w = Hmat*V[:,1]
+    w = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
     #orthogonalise
     T[1,1] = dot(w,V[:,1])
     w = w - T[1,1]*V[:,1]
     #normalize next vector
     T[2,1] = norm(w)
     V[:,2] = w/T[2,1]
-    
-    if T[2,1] < 10e-8
-        T[1,2] = T[2,1]
-        Tm = T[1:2,1:2]
-        display(Tm)
-        tvals = eigvals(Tm)
-        display(tvals)
-        println("\nMy eigenvals - nuc:")
-        x = (my_energies .- nuc)
-        display(x)
-        y=z
-    end
 
     for j = 2:m
         #make T symmetric
         T[j-1, j] = T[j, j-1]
         
         #next vector
-        #w = get_sigma(H_alpha, H_beta, H_mixed, V[:,j])
-        w = get_sigma(H_alpha, H_beta, V[:,j], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
-        #w = matrix*V[:,j]
+        w = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,j], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
+        #w = Hmat*V[:,j]
         #orthogonalise agaisnt two previous vectors
         T[j,j] = dot(w,V[:, j])
         # below is like this w_3 = w_3 - a_2 |v_2> - b_2 |v_1>
@@ -190,7 +176,7 @@ function run_fci(orbs, nalpha, nbeta, m=20)
         V[:,j+1] = w/T[j+1, j]
 
         #convergence check
-        if T[j+1, j] < 10E-8
+        if T[j+1, j] < 10E-10
             @printf("\n\n --------------- Converged at %i iteration ---------------  \n\n", j)
             Tm = T[1:j, 1:j]
             println("Tm tridiag matrix")
@@ -202,12 +188,10 @@ function run_fci(orbs, nalpha, nbeta, m=20)
             x = (my_energies .- nuc)
             display(x)
             diff = x[1]-Tm_vals[1]
-            diff[abs.(diff) .< 1e-14] .= 0
-            println("Diff in eigenvalues: ")
+            println("\n -------- Diff in eigenvalues ------------")
             display(diff)
-            y=z
-            #return Tm, V
-            #break
+            return Tm, V
+            break
         end 
 
         if j == m
@@ -218,18 +202,17 @@ function run_fci(orbs, nalpha, nbeta, m=20)
     #make T into symmetric matrix of shape (m,m)
     Tm = T[1:m, 1:m]
     display(T[1:m, 1:m])
-    Tm_vals = sort(eigvals(Tm[1:3, 1:3]))
+    Tm_vals = sort(eigvals(Tm))
     println("Tm eigen vals: ")
     display(Tm_vals)
     println("\nMy eigenvals - nuc:")
     x = (my_energies .- nuc)
     display(x)
     diff = x[1]-Tm_vals[1]
-    diff[abs.(diff) .< 1e-14] .= 0
-    println("Diff in eigenvalues: ")
+    println("\n --------- Diff in eigenvalues ------------")
     display(diff)
-    y=z
-    return Tm, V#=}}}=#
+    println("\n")
+    return Tm, V
 end
 
 function make_index_table(configs, ndets, y_matrix)
@@ -249,7 +232,7 @@ function make_index_table(configs, ndets, y_matrix)
 end
 
 function precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix, int1e, int2e, nelec)
-    Hout = zeros(ndets, ndets)
+    Hout = zeros(ndets, ndets)#={{{=#
     for K in 1:ndets
         config = configs[K].config
         idx = get_index(config, y_matrix, orbs)
@@ -260,7 +243,7 @@ function precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix,
                 Hout[idx,idx] -= int2e[config[i], config[j], config[i], config[j]]
             end
         end
-    end
+    end#=}}}=#
     return Hout
 end
 
@@ -268,10 +251,10 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
     Ha = zeros(ndets, ndets)
     nelecs = size(configs[1].config)[1]
     
-    h1eff = deepcopy(int1e)
-    @tensor begin
-        h1eff[p,q] -= .5 * int2e[p,j,j,q]
-    end
+    #h1eff = deepcopy(int1e)
+    #@tensor begin
+    #    h1eff[p,q] -= .5 * int2e[p,j,j,q]
+    #end
     
     for I in configs #Ia or Ib, configs=list of all possible determinants
         I_idx = get_index(I.config, y_matrix, I.norbs)
@@ -459,43 +442,17 @@ function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, inde
             end
         end
     end#=}}}=#
-    #println("\n Sigma3")
-    #display(sigma3)
     return sigma3
 end
 
-        #for i in I
-        #    for a in vir_I
-        #            for j in J
-        #                for b in vir_J
-        #                    #i think ill have some double counting in these
-        #                    I_prim, signi = excit_config(deepcopy(I), [i, a])
-        #                    J_prim, signj = excit_config(deepcopy(J), [j, b])
-        #                    I_prim_idx = get_index(I_prim, y_matrix[1], norbs)
-        #                    J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
-        #                    #println("I prim: ", I_prim, "index: ", I_prim_idx)
-        #                    #println("J prim: ", J_prim, "index: ", J_prim_idx)
-        #                    #Hmixed[I_prim_idx, J_prim_idx] += signi*signj*int2e[i, a, j, b]
-        #                    #Hmixed[J_prim_idx, I_prim_idx] += signi*signj*int2e[i, a, j, b]
-        #                    sigma3[I_prim_idx] += signi*signj*int2e[i, j, a, b]*vector[J_prim_idx]
-        #                end
-        #            end
-        #        end
-        #    end
-        #end
-
-function get_sigma(Ha, Hb, vector, configs, norbs, y_matrix, int2e, index_table_a, index_table_b, dim, ndets_a)
-    b = reshape(vector, (size(Ha)[1], size(Hb)[1]))
-    #make Ha, Hb, and sigma3 neg to approx lowest eigenvalue in Lanczos
-    sigma1 = reshape(Ha*b, (dim, 1))
-    sigma2 = reshape(Hb*transpose(b), (dim, 1))
+function get_sigma(Ha, Hb, Ia, Ib, vector, configs, norbs, y_matrix, int2e, index_table_a, index_table_b, dim, ndets_a)
+    #b = reshape(vector, (size(Ha)[1], size(Hb)[1]))
+    #sigma1 = reshape(Ha*b, (dim, 1))
+    #sigma2 = reshape(Hb*transpose(b), (dim, 1))
+    sigma1 = kron(Ib, Ha)*vector
+    sigma2 = kron(Hb, Ia)*vector
     sigma3 = get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
-    #sigma1 = reshape(-Ha*b, (dim, 1))
-    #sigma2 = reshape(-Hb*transpose(b), (dim, 1))
-    #sigma3 = -1*get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
     sigma = sigma1 + sigma2 + sigma3
-    #println("\n sigma: ")
-    #display(sigma)
     return sigma
 end
 
