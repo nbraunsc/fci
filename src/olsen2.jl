@@ -50,83 +50,83 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     #get H components
     H_alpha = compute_ss_terms_full(ndets_a, orbs, int1e, int2e, index_table_a, alpha_configs, yalpha)
     H_beta = compute_ss_terms_full(ndets_b, orbs, int1e, int2e, index_table_b, beta_configs, ybeta)
-    H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
+    #H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
     
     H_alpha = Ha_diag + H_alpha
     H_beta = Hb_diag + H_beta
 
-    H_alpha[abs.(H_alpha) .< 1e-14] .= 0
-    H_beta[abs.(H_beta) .< 1e-14] .= 0
-    H_mixed[abs.(H_mixed) .< 1e-14] .= 0
-    H_pyscf[abs.(H_pyscf) .< 1e-14] .= 0
-    ci[abs.(ci) .< 1e-14] .= 0
+    #H_alpha[abs.(H_alpha) .< 1e-14] .= 0
+    #H_beta[abs.(H_beta) .< 1e-14] .= 0
+    #H_mixed[abs.(H_mixed) .< 1e-14] .= 0
+    #H_pyscf[abs.(H_pyscf) .< 1e-14] .= 0
+    #ci[abs.(ci) .< 1e-14] .= 0
 
 
     Ia = Matrix{Float64}(I, size(H_alpha))
     Ib = Matrix{Float64}(I, size(H_beta))
-    Ha = kron(H_alpha, Ib) 
-    Hb = kron(Ia, H_beta) 
-    Ha[abs.(Ha) .< 1e-14] .= 0
-    Hb[abs.(Hb) .< 1e-14] .= 0
+    #Ha = kron(H_alpha, Ib) 
+    #Hb = kron(Ia, H_beta) 
+    #Ha[abs.(Ha) .< 1e-14] .= 0
+    #Hb[abs.(Hb) .< 1e-14] .= 0
 
     #H = kron(H_alpha, Ib) + kron(Ia, H_beta) + H_mixed 
-    Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
-    Hmat .+= kron(Ib, H_alpha)
-    Hmat .+= kron(H_beta, Ia)
-    Hmat .+= H_mixed
+    #Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
+    #Hmat .+= kron(Ib, H_alpha)
+    #Hmat .+= kron(H_beta, Ia)
+    #Hmat .+= H_mixed
     
     #H = .5*(Hmat+Hmat')
-    H = Hmat
+    #H = Hmat
     
-    println("\nH_alpha")
-    display(H_alpha)
-    
-    println("\nH_beta")
-    display(H_beta)
+    #println("\nH_alpha")
+    ##display(H_alpha)
+    #
+    #println("\nH_beta")
+    #display(H_beta)
 
-    println("H mixed")
-    display(H_mixed)
-    
-    println("\nmy H:")
-    display(H)
-    
-    println("my ci:")
-    display(ci)
+    #println("H mixed")
+    #display(H_mixed)
+    #
+    #println("\nmy H:")
+    #display(H)
+    #
+    #println("my ci:")
+    #display(ci)
 
-    println("\n Diff between my ci and slater ci")
-    diff3 = ci-H
-    diff3[abs.(diff3) .< 1e-14] .= 0
-    display(diff3)
-    println(diag(diff3))
-    
-    println("\nH Pyscf")
-    display(H_pyscf)
-    
-    println("\nDiff Between PYSCF and MY H")
+    #println("\n Diff between my ci and slater ci")
+    #diff3 = ci-H
+    #diff3[abs.(diff3) .< 1e-14] .= 0
+    #display(diff3)
+    #println(diag(diff3))
+    #
+    #println("\nH Pyscf")
+    #display(H_pyscf)
+    #
+    #println("\nDiff Between PYSCF and MY H")
     #diff = H_pyscf - H
     #diff[abs.(diff) .< 1e-14] .= 0
     #display(diff)
     #println("Trace: ", tr(diff))
     #println(diag(diff))
 
-    e = sort(eigvals(H))
-    e2 = eigvals(ci)
-    e3 = eigvals(H_pyscf)
-    eigvals_pyscf = npzread("/Users/nicole/code/fci/src/data/eigenvals.npy")
-    nuc = npzread("/Users/nicole/code/fci/src/data/nuc.npy")
-    my_energies = e.+nuc
-    ci_energies = e2.+nuc
+    #e = sort(eigvals(H))
+    #e2 = eigvals(ci)
+    #e3 = eigvals(H_pyscf)
+    #eigvals_pyscf = npzread("/Users/nicole/code/fci/src/data/eigenvals.npy")
+    #nuc = npzread("/Users/nicole/code/fci/src/data/nuc.npy")
+    #my_energies = e.+nuc
+    #ci_energies = e2.+nuc
     #diff_mypyscf = eigvals_pyscf - my_energies
     #diff_cipyscf = eigvals_pyscf - ci_energies
     #diff_mypyscf[abs.(diff_mypyscf) .< 1e-14] .= 0
     #diff_cipyscf[abs.(diff_cipyscf) .< 1e-14] .= 0
     
-    println("\n Pyscf eigenvals:")
-    display(eigvals_pyscf)
-    println("\n CI eigenvals + nuc:")
-    display(ci_energies)
-    println("\nMy eigenvals + nuc:")
-    display(my_energies)
+    #println("\n Pyscf eigenvals:")
+    #display(eigvals_pyscf)
+    #println("\n CI eigenvals + nuc:")
+    #display(ci_energies)
+    #println("\nMy eigenvals + nuc:")
+    #display(my_energies)
 
     #println("\n Diff Mine and Pyscf")
     #display(diff_mypyscf)
@@ -179,17 +179,17 @@ function run_fci(orbs, nalpha, nbeta, m=12)
         if T[j+1, j] < 10E-10
             @printf("\n\n --------------- Converged at %i iteration ---------------  \n\n", j)
             Tm = T[1:j, 1:j]
-            println("Tm tridiag matrix")
-            display(Tm)
-            Tm_vals = sort(eigvals(Tm))
-            println("\nTm eigen vals: ")
-            display(Tm_vals)
-            println("\nMy eigenvals - nuc:")
-            x = (my_energies .- nuc)
-            display(x)
-            diff = x[1]-Tm_vals[1]
-            println("\n -------- Diff in eigenvalues ------------")
-            display(diff)
+            #println("Tm tridiag matrix")
+            #display(Tm)
+            #Tm_vals = sort(eigvals(Tm))
+            #println("\nTm eigen vals: ")
+            #display(Tm_vals)
+            #println("\nMy eigenvals - nuc:")
+            #x = (my_energies .- nuc)
+            #display(x)
+            #diff = x[1]-Tm_vals[1]
+            #println("\n -------- Diff in eigenvalues ------------")
+            #display(diff)
             return Tm, V
             break
         end 
@@ -201,17 +201,17 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     
     #make T into symmetric matrix of shape (m,m)
     Tm = T[1:m, 1:m]
-    display(T[1:m, 1:m])
-    Tm_vals = sort(eigvals(Tm))
-    println("Tm eigen vals: ")
-    display(Tm_vals)
-    println("\nMy eigenvals - nuc:")
-    x = (my_energies .- nuc)
-    display(x)
-    diff = x[1]-Tm_vals[1]
-    println("\n --------- Diff in eigenvalues ------------")
-    display(diff)
-    println("\n")
+    #display(T[1:m, 1:m])
+    #Tm_vals = sort(eigvals(Tm))
+    #println("Tm eigen vals: ")
+    #display(Tm_vals)
+    #println("\nMy eigenvals - nuc:")
+    #x = (my_energies .- nuc)
+    #display(x)
+    #diff = x[1]-Tm_vals[1]
+    #println("\n --------- Diff in eigenvalues ------------")
+    #display(diff)
+    #println("\n")
     return Tm, V
 end
 
