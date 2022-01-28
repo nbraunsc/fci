@@ -8,16 +8,18 @@ orbs = 4
 nalpha = 3
 ndets = factorial(orbs)÷(factorial(nalpha)*factorial(orbs-nalpha))
 @load "_testdata_h4_triplet_integrals.jld2"
+int1e = one
+int2e = two
 
 
 @testset "spin diag terms" begin
     Hout_test = zeros(ndets, ndets)
     for K in 1:ndets
         config = configs[K].config
-        idx = get_index(config, y_matrix, orbs)
-        for i in 1:nelec
+        idx = fci.get_index(config, y_matrix, orbs)
+        for i in 1:nalpha
             Hout_test[idx,idx] += int1e[config[i], config[i]]
-            for j in i+1:nelec
+            for j in i+1:nalpha
                 Hout_test[idx,idx] += int2e[config[i], config[i], config[j], config[j]]
                 Hout_test[idx,idx] -= int2e[config[i], config[j], config[i], config[j]]
             end

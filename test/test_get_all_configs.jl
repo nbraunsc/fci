@@ -14,11 +14,11 @@ norbs = 4
     configs_test = [] #empty Array
     for i in 1:size(all_configs_test)[1]
         A = findall(!iszero, all_configs_test[i])
-        push!(configs_test,DeterminantString(norbs, nelecs, A, 1, UInt(i))) 
+        push!(configs_test,fci.DeterminantString(norbs, nelecs, A, 1, UInt(i))) 
     end
 
     for i in 1:length(configs)
-        @test configs[i] == configs_test[i]
+        @test configs[i].config == configs_test[i].config
     end
 end
 

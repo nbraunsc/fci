@@ -12,7 +12,7 @@ positions = [1,4]
     spot = first(findall(x->x==positions[1], config))
     config[spot] = positions[2]
     config_org = deepcopy(config) 
-    count_test, arr_test = bubble_sort(config)
+    count_test, arr_test = fci.bubble_sort(config)
     @test count_test == count
     @test arr_test == arr
     if iseven(count_test)

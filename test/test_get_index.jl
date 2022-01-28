@@ -11,7 +11,7 @@ idxs = [3,4,2,1]
 @testset "get index" begin
     for i in 1:4
         config = configs[i]
-        idx = idx[i]
+        idx = idxs[i]
         if i <= 2
             y = ya
             string = zeros(Int8, norbs)

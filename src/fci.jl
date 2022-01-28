@@ -4,6 +4,4 @@ module fci
 #include("lanczos.jl")
 include("olsen2.jl")
 
-export olsen2
-
 end

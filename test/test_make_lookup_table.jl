@@ -15,8 +15,8 @@ y_matrix = ya
         vir = filter!(x->!(x in configs[I].config), [1:configs[I].norbs;])
         for p in configs[I].config
             for q in vir
-                new_config, sorted_config, sign_s = excit_config(deepcopy(configs[I].config), [p,q])
-                idx = get_index(new_config, y_matrix, configs[I].norbs)
+                new_config, sorted_config, sign_s = fci.excit_config(deepcopy(configs[I].config), [p,q])
+                idx = fci.get_index(new_config, y_matrix, configs[I].norbs)
                 index_table_test[p,q,configs[I].label]=sign_s*idx
             end
         end
