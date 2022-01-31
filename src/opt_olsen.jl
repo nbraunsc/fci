@@ -9,6 +9,7 @@ using StaticArrays
 using Einsum
 using TensorOperations
 #using fci
+using JLD2
 
 np = pyimport("numpy")
 
@@ -21,14 +22,14 @@ mutable struct DeterminantString
     label::UInt
 end
 
-function run_fci(orbs, nalpha, nbeta, m=12)
+function opt_run_fci(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos
     int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
     H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
     ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
-    yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
-    
+    yalpha, ybeta = opt_make_xy(orbs, nalpha, nbeta)
+    #@save "/Users/nicole/code/fci/test/_testdata_h8_integrals.jld2" int1e int2e
     #get all configs
     configa = zeros(orbs)
     configb = zeros(orbs)
@@ -36,25 +37,26 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     configb[1:nbeta] .= 1
 
 
-    alpha_configs = get_all_configs(configa, orbs)
-    beta_configs = get_all_configs(configb, orbs)
+    alpha_configs = opt_get_all_configs(configa, orbs)
+    beta_configs = opt_get_all_configs(configb, orbs)
     ndets_a = factorial(orbs)÷(factorial(nalpha)*factorial(orbs-nalpha))
     ndets_b = factorial(orbs)÷(factorial(nbeta)*factorial(orbs-nbeta))
     
     #make lookup table
     println("\n alpha")
-    index_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
+    index_table_a = opt_make_index_table(alpha_configs, ndets_a, yalpha) 
     println("\n beta")
-    index_table_b = make_index_table(beta_configs, ndets_b, ybeta) 
-    error("stop")
+    index_table_b = opt_make_index_table(beta_configs, ndets_b, ybeta) 
     
-    Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, orbs, index_table_a, yalpha, int1e, int2e, nalpha)
-    Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, orbs, index_table_b, ybeta, int1e, int2e, nbeta)
+    Ha_diag = opt_precompute_spin_diag_terms(alpha_configs, ndets_a, orbs, index_table_a, yalpha, int1e, int2e, nalpha)
+    Hb_diag = opt_precompute_spin_diag_terms(beta_configs, ndets_b, orbs, index_table_b, ybeta, int1e, int2e, nbeta)
 
     #get H components
-    H_alpha = compute_ss_terms_full(ndets_a, orbs, int1e, int2e, index_table_a, alpha_configs, yalpha)
-    H_beta = compute_ss_terms_full(ndets_b, orbs, int1e, int2e, index_table_b, beta_configs, ybeta)
+    H_alpha = opt_compute_ss_terms_full(ndets_a, orbs, int1e, int2e, index_table_a, alpha_configs, yalpha)
+    H_beta = opt_compute_ss_terms_full(ndets_b, orbs, int1e, int2e, index_table_b, beta_configs, ybeta)
     #H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
+    
+    #@save "/Users/nicole/code/fci/test/_testdata_h8_alpha.jld2" yalpha ybeta index_table_a H_alpha Ha_diag alpha_configs
     
     H_alpha = Ha_diag + H_alpha
     H_beta = Hb_diag + H_beta
@@ -148,7 +150,11 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     V[:,1] = b/norm(b)
     #next vector
     #w = Hmat*V[:,1]
-    w = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
+    #sigma, sigma3 = opt_get_sigma(H_alpha, H_beta, Ia, Ib, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
+    w = opt_get_sigma(H_alpha, H_beta, Ia, Ib, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
+    #vector = V[:,1]
+    #@save "/Users/nicole/code/fci/test/_testdata_h8.jld2" H_alpha H_beta alpha_configs beta_configs index_table_a index_table_b sigma3 sigma vector
+    #error("stop")
     #orthogonalise
     T[1,1] = dot(w,V[:,1])
     w = w - T[1,1]*V[:,1]
@@ -161,7 +167,7 @@ function run_fci(orbs, nalpha, nbeta, m=12)
         T[j-1, j] = T[j, j-1]
         
         #next vector
-        w = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,j], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
+        w = opt_get_sigma(H_alpha, H_beta, Ia, Ib, V[:,j], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
         #w = Hmat*V[:,j]
         #orthogonalise agaisnt two previous vectors
         T[j,j] = dot(w,V[:, j])
@@ -219,17 +225,17 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     return Tm, V
 end
 
-function make_index_table(configs, ndets, y_matrix)
+function opt_make_index_table(configs, ndets, y_matrix)
     index_table = zeros(Int, configs[1].norbs, configs[1].norbs, ndets)#={{{=#
     orbs = [1:configs[1].norbs;]
     for I in 1:ndets
         vir = filter!(x->!(x in configs[I].config), [1:configs[I].norbs;])
         for p in configs[I].config
             for q in vir
-                new_config, sorted_config, sign_s = excit_config(deepcopy(configs[I].config), [p,q])
-                println("config: ", new_config)
-                idx = get_index(new_config, y_matrix, configs[I].norbs)
-                println("index: ", idx)
+                new_config, sorted_config, sign_s = opt_excit_config(deepcopy(configs[I].config), [p,q])
+                #println("config: ", new_config)
+                idx = opt_get_index(new_config, y_matrix, configs[I].norbs)
+                #println("index: ", idx)
                 index_table[p,q,configs[I].label]=sign_s*idx
             end
         end
@@ -237,11 +243,11 @@ function make_index_table(configs, ndets, y_matrix)
     return index_table#, sign_table
 end
 
-function precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix, int1e, int2e, nelec)
+function opt_precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix, int1e, int2e, nelec)
     Hout = zeros(ndets, ndets)#={{{=#
     for K in 1:ndets
         config = configs[K].config
-        idx = get_index(config, y_matrix, orbs)
+        idx = opt_get_index(config, y_matrix, orbs)
         for i in 1:nelec
             Hout[idx,idx] += int1e[config[i], config[i]]
             for j in i+1:nelec
@@ -253,7 +259,7 @@ function precompute_spin_diag_terms(configs, ndets, orbs, index_table, y_matrix,
     return Hout
 end
 
-function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs, y_matrix)
+function opt_compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs, y_matrix)
     Ha = zeros(ndets, ndets)
     nelecs = size(configs[1].config)[1]
     
@@ -263,7 +269,7 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
     #end
     
     for I in configs #Ia or Ib, configs=list of all possible determinants
-        I_idx = get_index(I.config, y_matrix, I.norbs)
+        I_idx = opt_get_index(I.config, y_matrix, I.norbs)
         F = zeros(ndets)
         orbs = [1:I.norbs;]
         vir = filter!(x->!(x in I.config), orbs)
@@ -272,7 +278,8 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
         for k in I.config
             for l in vir
                 #annihlate electron in orb k
-                config_single, sorted_config, sign_s = excit_config(deepcopy(I.config), [k,l])
+                config_single, sorted_config, sign_s = opt_excit_config(deepcopy(I.config), [k,l])
+
                 config_single_idx = index_table[k,l,I.label]
                 F[abs(config_single_idx)] += sign_s*int1e[k,l]
                 for m in I.config
@@ -290,9 +297,9 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
                     for l in vir
                         for j in vir
                             if j>l
-                                single, sorted_s, sign_s = excit_config(deepcopy(I.config), [k,l])
-                                double, sorted_d, sign_d = excit_config(deepcopy(sorted_s), [i,j])
-                                idx = get_index(double, y_matrix, I.norbs)
+                                single, sorted_s, sign_s = opt_excit_config(deepcopy(I.config), [k,l])
+                                double, sorted_d, sign_d = opt_excit_config(deepcopy(sorted_s), [i,j])
+                                idx = opt_get_index(double, y_matrix, I.norbs)
                                 if sign_d == sign_s
                                     F[abs(idx)] += (int2e[i,j,k,l] - int2e[i,l,j,k]) #one that works for closed
 
@@ -312,16 +319,16 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
     return Ha
 end
         
-function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_table_a, index_table_b, alpha, beta, yalpha, ybeta)
+function opt_compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_table_a, index_table_b, alpha, beta, yalpha, ybeta)
     dim = ndets_a*ndets_b#={{{=#
     Hmat = zeros(dim, dim)
 
     for Ka in alpha
-        Ka_idx = get_index(Ka.config, yalpha, norbs)
+        Ka_idx = opt_get_index(Ka.config, yalpha, norbs)
         orbsa = [1:norbs;]
         vira = filter!(x->!(x in Ka.config), orbsa)
         for Kb in beta
-            Kb_idx = get_index(Kb.config, ybeta, norbs)
+            Kb_idx = opt_get_index(Kb.config, ybeta, norbs)
             orbsb = [1:norbs;]
             virb = filter!(x->!(x in Kb.config), orbsb)
             K = Ka_idx + (Kb_idx-1)*ndets_a #works for closed shell
@@ -336,7 +343,7 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
             #excit alpha only
             for p in Ka.config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), [p,q])
+                    a_single, sort_a, sign_a = opt_excit_config(deepcopy(Ka.config), [p,q])
                     idxa = abs(index_table_a[p,q,Ka.label])
 
                     Kprime = idxa + (Kb_idx-1)*ndets_a
@@ -350,7 +357,7 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
             #excit beta only
             for r in Kb.config
                 for s in virb
-                    b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), [r,s])
+                    b_single, sort_b, sign_b = opt_excit_config(deepcopy(Kb.config), [r,s])
                     idxb = abs(index_table_b[r,s,Kb.label])
                     Lprime = Ka_idx + (idxb-1)*ndets_a
                     
@@ -364,11 +371,11 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
             #excit alpha and beta
             for p in Ka.config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), [p,q])
+                    a_single, sort_a, sign_a = opt_excit_config(deepcopy(Ka.config), [p,q])
                     idxa = abs(index_table_a[p,q,Ka.label])
                     for r in Kb.config
                         for s in virb
-                            b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), [r,s])
+                            b_single, sort_b, sign_b = opt_excit_config(deepcopy(Kb.config), [r,s])
                             idxb = abs(index_table_b[r,s,Kb.label])
                             L = idxa + (idxb-1)*ndets_a
                             Hmat[K,L] += sign_a*sign_b*(int2e[p,q,r,s])
@@ -381,7 +388,7 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
     return Hmat
 end
 
-function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+function opt_get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
     #configs = [alpha_configs, beta_configs]{{{
     #nelec = [n_alpha, n_beta]
     #y_matrix = [y_alpha, y_beta]
@@ -390,11 +397,11 @@ function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, inde
     for I in configs[1]  #alpha configs
         orbs = [1:norbs;]
         vir_I = filter!(x->!(x in I.config), orbs)
-        I_idx = get_index(I.config, y_matrix[1], norbs)
+        I_idx = opt_get_index(I.config, y_matrix[1], norbs)
         for J in configs[2]     #beta configs
             orbs2 = [1:norbs;]
             vir_J = filter!(x->!(x in J.config), orbs2)
-            J_idx = get_index(J.config, y_matrix[2], norbs)
+            J_idx = opt_get_index(J.config, y_matrix[2], norbs)
             K = I_idx + (J_idx-1)*ndets_a
 
             for l in J.config
@@ -407,7 +414,7 @@ function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, inde
             #excit alpha only
             for p in I.config
                 for q in vir_I
-                    a_single, sorta, sign_a = excit_config(deepcopy(I.config), [p,q])
+                    a_single, sorta, sign_a = opt_excit_config(deepcopy(I.config), [p,q])
                     idxa = abs(index_table_a[p,q,I.label])
                     Kprim = idxa + (J_idx-1)*ndets_a
                     for m in J.config
@@ -420,7 +427,7 @@ function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, inde
             #excit beta only
             for r in J.config
                 for s in vir_J
-                    b_single, sortb, sign_b = excit_config(deepcopy(J.config), [r,s])
+                    b_single, sortb, sign_b = opt_excit_config(deepcopy(J.config), [r,s])
                     idxb = abs(index_table_b[r,s,J.label])
                     Lprim = I_idx + (idxb-1)*ndets_a
                     for n in I.config
@@ -433,11 +440,11 @@ function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, inde
             #excit both alpha and beta
             for p in I.config
                 for q in vir_I
-                    a_single, sorta, sign_a = excit_config(deepcopy(I.config), [p,q])
+                    a_single, sorta, sign_a = opt_excit_config(deepcopy(I.config), [p,q])
                     idxa = abs(index_table_a[p,q,I.label])
                     for r in J.config
                         for s in vir_J
-                            b_single, sortb, sign_b = excit_config(deepcopy(J.config), [r,s])
+                            b_single, sortb, sign_b = opt_excit_config(deepcopy(J.config), [r,s])
                             idxb = abs(index_table_b[r,s,J.label])
                             L = idxa + (idxb-1)*ndets_a
                             #Hmat[K,L]
@@ -451,18 +458,18 @@ function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, inde
     return sigma3
 end
 
-function get_sigma(Ha, Hb, Ia, Ib, vector, configs, norbs, y_matrix, int2e, index_table_a, index_table_b, dim, ndets_a)
+function opt_get_sigma(Ha, Hb, Ia, Ib, vector, configs, norbs, y_matrix, int2e, index_table_a, index_table_b, dim, ndets_a)
     #b = reshape(vector, (size(Ha)[1], size(Hb)[1]))
     #sigma1 = reshape(Ha*b, (dim, 1))
     #sigma2 = reshape(Hb*transpose(b), (dim, 1))
     sigma1 = kron(Ib, Ha)*vector
     sigma2 = kron(Hb, Ia)*vector
-    sigma3 = get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+    sigma3 = opt_get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
     sigma = sigma1 + sigma2 + sigma3
-    return sigma
+    return sigma, sigma3
 end
 
-function make_xy(norbs, nalpha, nbeta)
+function opt_make_xy(norbs, nalpha, nbeta)
     #makes y mazotrices for grms indexing{{{
     n_unocc_a = (norbs-nalpha)+1
     n_unocc_b = (norbs-nbeta)+1
@@ -498,7 +505,7 @@ function make_xy(norbs, nalpha, nbeta)
     return yalpha, ybeta
 end
 
-function get_all_configs(config, norbs)
+function opt_get_all_configs(config, norbs)
     #get all possible configs from a given start config{{{
     nelecs = UInt8(size(config)[1])
     all_configs = unique(collect(permutations(config, size(config)[1])))
@@ -511,7 +518,7 @@ function get_all_configs(config, norbs)
     return configs
 end
 
-function get_index(config, y, norbs)
+function opt_get_index(config, y, norbs)
     #config has to be orbital index form since it will turned into bit string form{{{
     string = zeros(Int8, norbs)
     string[config] .= 1
@@ -534,7 +541,7 @@ function get_index(config, y, norbs)
     return UInt8(index)
 end
 
-function excit_config(config, positions)
+function opt_excit_config(config, positions)
     #apply creation operator to the string{{{
     #get new index of string and store in lookup table
     #config is orbital indexing in ascending order
@@ -543,7 +550,7 @@ function excit_config(config, positions)
     spot = first(findall(x->x==positions[1], config))
     config[spot] = positions[2]
     config_org = deepcopy(config) 
-    count, arr = bubble_sort(config)
+    count, arr = opt_bubble_sort(config)
     if iseven(count)
         sign = 1
     else
@@ -552,7 +559,7 @@ function excit_config(config, positions)
     return config_org, arr, sign
 end
 
-function bubble_sort(arr)
+function opt_bubble_sort(arr)
     len = size(arr)[1]#={{{=#
     count = 0
     # Traverse through all array elements
