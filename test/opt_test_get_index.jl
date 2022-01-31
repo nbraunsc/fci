@@ -1,19 +1,22 @@
 using fci
 using JLD2
+
 #using TimerOutputs
 
 @load "_testdata_h8_alpha.jld2"
 
 norbs = 8      #for the h4 example
-#configs = [[4, 6, 7, 8], [5, 6, 7, 4], [2, 5, 6, 4], [2, 3, 6, 1]]
-#idxs = [69, 35, 14, 6]
-configs = [[5, 2, 3, 4], [1, 7, 3, 4], [5, 6, 7, 4], [1, 6, 7, 8]]
+configs = [4, 6, 7, 8], [5, 6, 7, 4], [2, 5, 6, 4], [2, 3, 6, 1]
          #alpha, alpha, beta, beta
-idxs = [5, 18, 35, 66]
+idxs = [69, 35, 14, 6]
+
+#norbs = 4      #for the h4 example
+#configs = [1,3,4], [4,2,3], [2], [1]
+         #alpha, alpha, beta, beta
+#idxs = [3,4,2,1]
 
 #to = TimerOutput()
-
-#@timeit to "test get index" begin
+#@timeit to "test opt get index" begin
 @time begin
 @testset "get index" begin
     for i in 1:4

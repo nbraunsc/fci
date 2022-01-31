@@ -1,6 +1,7 @@
 using fci
 using JLD2
 using LinearAlgebra
+#using TimerOutputs
 
 @load "_testdata_h8_integrals.jld2"
 @load "_testdata_h8_alpha.jld2"
@@ -20,11 +21,15 @@ Hb = H_beta
 
 Ia = Matrix{Float64}(I, size(Ha))
 Ib = Matrix{Float64}(I, size(Hb))
+
+#to = TimerOutput()
+
+#@timeit to "test opt get sigma" begin
 @time begin
 @testset "get sigma" begin
     sigma_test1 = kron(Ib, Ha)*vector
     sigma_test2 = kron(Hb, Ia)*vector
-    sigma_test3 = fci.get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+    sigma_test3 = fci.opt_get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
     @test isapprox(sigma3, sigma_test3, atol=0.05)
     sigma_test = sigma_test1 + sigma_test2 + sigma_test3
     @test isapprox(sigma, sigma_test, atol=0.05)

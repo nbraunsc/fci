@@ -1,5 +1,6 @@
 using fci
 using JLD2
+#using TimerOutputs
 
 @load "_testdata_h8_alpha.jld2"
 
@@ -7,6 +8,9 @@ norbs = 8
 nalpha = 4
 nbeta = 4
 
+#to = TimerOutput()
+
+#@timeit to "test opt make xy" begin
 @time begin
 @testset "make xy for grms" begin
     n_unocc_a = (norbs-nalpha)+1

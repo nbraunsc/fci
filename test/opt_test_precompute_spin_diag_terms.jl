@@ -1,5 +1,6 @@
 using fci
 using JLD2
+#using TimerOutputs
 
 @load "_testdata_h8_alpha.jld2"
 configs = alpha_configs
@@ -9,12 +10,16 @@ nalpha = 4
 ndets = factorial(orbs)÷(factorial(nalpha)*factorial(orbs-nalpha))
 @load "_testdata_h8_integrals.jld2"
 
+
+#to = TimerOutput()
+
+#@timeit to "test opt spin diag terms" begin
 @time begin
 @testset "spin diag terms" begin
     Hout_test = zeros(ndets, ndets)
     for K in 1:ndets
         config = configs[K].config
-        idx = fci.get_index(config, y_matrix, orbs)
+        idx = fci.opt_get_index(config, y_matrix, orbs)
         for i in 1:nalpha
             Hout_test[idx,idx] += int1e[config[i], config[i]]
             for j in i+1:nalpha
@@ -25,4 +30,5 @@ ndets = factorial(orbs)÷(factorial(nalpha)*factorial(orbs-nalpha))
     end
     @test isapprox(Ha_diag, Hout_test, atol=0.05)
 end
-end 
+end
+    
