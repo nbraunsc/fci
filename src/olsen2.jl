@@ -59,84 +59,14 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     H_alpha = Ha_diag + H_alpha
     H_beta = Hb_diag + H_beta
 
-    #H_alpha[abs.(H_alpha) .< 1e-14] .= 0
-    #H_beta[abs.(H_beta) .< 1e-14] .= 0
-    #H_mixed[abs.(H_mixed) .< 1e-14] .= 0
-    #H_pyscf[abs.(H_pyscf) .< 1e-14] .= 0
-    #ci[abs.(ci) .< 1e-14] .= 0
-
-
     Ia = Matrix{Float64}(I, size(H_alpha))
     Ib = Matrix{Float64}(I, size(H_beta))
-    #Ha = kron(H_alpha, Ib) 
-    #Hb = kron(Ia, H_beta) 
-    #Ha[abs.(Ha) .< 1e-14] .= 0
-    #Hb[abs.(Hb) .< 1e-14] .= 0
-
-    #H = kron(H_alpha, Ib) + kron(Ia, H_beta) + H_mixed 
     #Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
     #Hmat .+= kron(Ib, H_alpha)
     #Hmat .+= kron(H_beta, Ia)
     #Hmat .+= H_mixed
-    
     #H = .5*(Hmat+Hmat')
     #H = Hmat
-    
-    #println("\nH_alpha")
-    ##display(H_alpha)
-    #
-    #println("\nH_beta")
-    #display(H_beta)
-
-    #println("H mixed")
-    #display(H_mixed)
-    #
-    #println("\nmy H:")
-    #display(H)
-    #
-    #println("my ci:")
-    #display(ci)
-
-    #println("\n Diff between my ci and slater ci")
-    #diff3 = ci-H
-    #diff3[abs.(diff3) .< 1e-14] .= 0
-    #display(diff3)
-    #println(diag(diff3))
-    #
-    #println("\nH Pyscf")
-    #display(H_pyscf)
-    #
-    #println("\nDiff Between PYSCF and MY H")
-    #diff = H_pyscf - H
-    #diff[abs.(diff) .< 1e-14] .= 0
-    #display(diff)
-    #println("Trace: ", tr(diff))
-    #println(diag(diff))
-
-    #e = sort(eigvals(H))
-    #e2 = eigvals(ci)
-    #e3 = eigvals(H_pyscf)
-    #eigvals_pyscf = npzread("/Users/nicole/code/fci/src/data/eigenvals.npy")
-    #nuc = npzread("/Users/nicole/code/fci/src/data/nuc.npy")
-    #my_energies = e.+nuc
-    #ci_energies = e2.+nuc
-    #diff_mypyscf = eigvals_pyscf - my_energies
-    #diff_cipyscf = eigvals_pyscf - ci_energies
-    #diff_mypyscf[abs.(diff_mypyscf) .< 1e-14] .= 0
-    #diff_cipyscf[abs.(diff_cipyscf) .< 1e-14] .= 0
-    
-    #println("\n Pyscf eigenvals:")
-    #display(eigvals_pyscf)
-    #println("\n CI eigenvals + nuc:")
-    #display(ci_energies)
-    #println("\nMy eigenvals + nuc:")
-    #display(my_energies)
-
-    #println("\n Diff Mine and Pyscf")
-    #display(diff_mypyscf)
-    #println("\n Diff CI and pyscf")
-    #display(diff_cipyscf)
-    
     
     dim = ndets_a*ndets_b
     b = zeros(dim)
@@ -205,17 +135,6 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     
     #make T into symmetric matrix of shape (m,m)
     Tm = T[1:m, 1:m]
-    #display(T[1:m, 1:m])
-    #Tm_vals = sort(eigvals(Tm))
-    #println("Tm eigen vals: ")
-    #display(Tm_vals)
-    #println("\nMy eigenvals - nuc:")
-    #x = (my_energies .- nuc)
-    #display(x)
-    #diff = x[1]-Tm_vals[1]
-    #println("\n --------- Diff in eigenvalues ------------")
-    #display(diff)
-    #println("\n")
     return Tm, V
 end
 
@@ -379,6 +298,76 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
         end
     end#=}}}=#
     return Hmat
+end
+
+function old_get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+    #configs = [alpha_configs, beta_configs]{{{
+    #nelec = [n_alpha, n_beta]
+    #y_matrix = [y_alpha, y_beta]
+    sigma3 = zeros(dim, 1)
+
+    for I in configs[1]  #alpha configs
+        orbs = [1:norbs;]
+        vir_I = filter!(x->!(x in I.config), orbs)
+        I_idx = get_index(I.config, y_matrix[1], norbs)
+        for J in configs[2]     #beta configs
+            orbs2 = [1:norbs;]
+            vir_J = filter!(x->!(x in J.config), orbs2)
+            J_idx = get_index(J.config, y_matrix[2], norbs)
+            K = I_idx + (J_idx-1)*ndets_a
+
+            for l in J.config
+                for n in I.config
+                    #Hmat[K,K]
+                    sigma3[K] += int2e[n,n,l,l]*vector[K]
+                end
+            end
+
+            #excit alpha only
+            for p in I.config
+                for q in vir_I
+                    a_single, sorta, sign_a = excit_config(deepcopy(I.config), [p,q])
+                    idxa = abs(index_table_a[p,q,I.label])
+                    Kprim = idxa + (J_idx-1)*ndets_a
+                    for m in J.config
+                        #Hmat[K,Kprim]
+                        sigma3[K]+=sign_a*int2e[p,q,m,m]*vector[Kprim]
+                    end
+                end
+            end
+
+            #excit beta only
+            for r in J.config
+                for s in vir_J
+                    b_single, sortb, sign_b = excit_config(deepcopy(J.config), [r,s])
+                    idxb = abs(index_table_b[r,s,J.label])
+                    Lprim = I_idx + (idxb-1)*ndets_a
+                    for n in I.config
+                        #Hmat[K,Lprim]
+                        sigma3[K]+=sign_b*int2e[r,s,n,n]*vector[Lprim]
+                    end
+                end
+            end
+
+            #excit both alpha and beta
+            for p in I.config
+                for q in vir_I
+                    a_single, sorta, sign_a = excit_config(deepcopy(I.config), [p,q])
+                    idxa = abs(index_table_a[p,q,I.label])
+                    for r in J.config
+                        for s in vir_J
+                            b_single, sortb, sign_b = excit_config(deepcopy(J.config), [r,s])
+                            idxb = abs(index_table_b[r,s,J.label])
+                            L = idxa + (idxb-1)*ndets_a
+                            #Hmat[K,L]
+                            sigma3[K] += sign_a*sign_b*int2e[p,q,r,s]*vector[L]
+                        end
+                    end
+                end
+            end
+        end
+    end#=}}}=#
+    return sigma3
 end
 
 function get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)

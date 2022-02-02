@@ -605,3 +605,275 @@ function old_get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
     end#=}}}=#
     return Hmixed
 end
+
+
+        #        for i in config_single
+        #            if i != l
+        #                for j in vir  #annihlate electron (from single excited config) in orb i != l (previouslly excited electron)
+        #                    if j!=l
+        #                        config_double, sorted_double, sign_d = excit_config(deepcopy(sorted_config), [i, j])
+        #                        config_double_idx = get_index(config_double, y_matrix, I.norbs)
+        #                        println("next j iteration")
+        #                        println(config_double, "idx: ", config_double_idx)
+        #                        if sign_d == sign_s
+        #                            println("same sign")
+        #                            println("adding to spot : ", config_double_idx)
+        #                            @inbounds F[abs(config_double_idx)] += .5 * int2e[i,k,j,l]
+        #                            #@inbounds F[config_double_idx] += .5 * int2e[i,j,k,l]
+        #                        else
+        #                            println("not same sign")
+        #                            println("adding to spot : ", config_double_idx)
+        #                            @inbounds F[abs(config_double_idx)] -= .5 * int2e[i,k,j,l]
+        #                            #@inbounds F[config_double_idx] -= .5 * int2e[i,j,k,l]
+        #                        end
+        #                    end
+        #                end
+        #            end
+        #        end
+        #    end
+        #end
+        #display(F)
+
+function old_compute_ss_terms(ndets, norbs, int1e, int2e, index_table, configs, y_matrix)
+    #something here adds to the diagonal when it shouldnt!!!{{{
+    Ha = zeros(ndets, ndets)
+    
+    h1eff = deepcopy(int1e)
+    @tensor begin
+        h1eff[p,q] -= .5 * int2e[p,j,j,q]
+    end
+
+    F = zeros(ndets)
+    display(h1eff)
+
+    for I in 1:ndets
+        idx = get_index(configs[I].config, y_matrix, norbs)
+        F .= 0
+        println("\n", I)
+        println(idx)
+        println(configs[I].config)
+
+        for k in 1:norbs
+            if k ∉ configs[I].config #not in
+                println(configs[I].config)
+                println("k not in config: ", k)
+                continue
+            end
+
+            for l in 1:norbs
+                if l in configs[I].config
+                    println("already in config, cant excit")
+                    continue
+                end
+
+                K = index_table[k,l,idx]
+                excit, sorted, signs = excit_config(deepcopy(configs[I].config), [k,l])
+                println("excited config: ", excit)
+                println("k->l ", k, l)
+                println("new index: ", K)
+
+                if K == 0
+                    println("no excitation possible")
+                    continue
+                end
+                
+                sign_kl = sign(K)
+                K=abs(K)
+                @inbounds F[K] += sign_kl*h1eff[k,l] #h_kl prime
+                display(F)
+                
+                for i in 1:norbs
+                    if i ∉ excit #not in
+                        println("i not in single excit: ", i, " ", excit)
+                        continue
+                    end
+
+                    for j in 1:norbs
+                        if l in excit || l in configs[I].config
+                            println("already in excit")
+                            continue
+                        end
+
+                        J=index_table[i,j,K]
+                        println("K: ", K)
+                        println("get_index: ", get_index(excit, y_matrix, norbs))
+                        println("single excit: ", excit)
+                        println("i->j ", i, j)
+                        println("J: ", J)
+                        
+                        if J == 0
+                            println("no double excit possible")
+                            continue
+                        end
+                        
+                        println(i,j)
+                        #println("double excited config: ", excit2)
+                        println("i->j ", i, j)
+                        println("new index: ", J)
+                        
+                        sign_ij = sign(J)
+                        J=abs(J)
+                        
+                        if sign_kl == sign_ij
+                            @inbounds F[J] += .5 * int2e[i,j,k,l]
+                            display(F)
+                        else
+                            @inbounds F[J] -= .5 * int2e[i,j,k,l]
+                            display(F)
+                        end
+                    end
+                end
+            end
+        end
+        Ha[:,idx] .= F
+    end
+    return Ha#=}}}=#
+end
+    
+    #for Kb in 1:ndets_b 
+    #    idxb = get_index(beta[Kb].config, ybeta, norbs)
+    #    for Ka in 1:ndets_a
+    #        idxa = get_index(alpha[Ka].config, yalpha, norbs)
+    #        K = idxa + (idxb-1)*ndets_a
+
+    #        #Diagonal part of mixed term!
+    #        for n in alpha[Ka].config
+    #            for l in beta[Kb].config
+    #                Hmat[K,K] += int2e[n,n,l,l]
+    #            end
+    #        end
+
+    #        for r in 1:norbs
+    #            for p in 1:norbs
+    #                La = index_table_a[p,r,idxa]
+    #                #La = index_table_a[p,r,Ka]
+    #                if La == 0
+    #                    continue
+    #                end
+    #                #config_single, sorted_config, sign_s = excit_config(deepcopy(alpha[Ka].config), [p,r])
+    #                #println("alpha excit: ", config_single, " sign: ", sign_s)
+    #                #println("p->r: ", p,r)
+    #                sign_a = sign(La)
+    #                #println("sign from table: ", sign_a)
+    #                La = abs(La)
+    #                Lb=1
+    #                sign_b =1
+    #                L=1
+    #                for s in 1:norbs
+    #                    for q in 1:norbs
+    #                        Lb = index_table_b[q,s,idxb]
+    #                        if Lb == 0
+    #                            continue
+    #                        end
+    #                        sign_b = sign(Lb)
+    #                        Lb = abs(Lb)
+    #                        L = La + (Lb-1)*ndets_a
+    #                        Hmat[K,L] += sign_a*sign_b*(int2e[p,q,r,s] - int2e[p,r,q,s])
+    #                        #Hmat[K,L] += sign_a*sign_b*(int2e[p,r,q,s] -int2e[p,q,r,s])
+    #                        #Hmat[K,L] += int2e[p,r,q,s]*sign_a*sign_b
+    #                    end
+    #                end
+    #            end
+    #        end
+    #    end
+    #end#=}}}=#
+
+function one_elec(config, int1e, i=0, a=0)
+    h = 0 #={{{=#
+    if i == 0
+        #sum over all electrons (diag term)
+        #println("diag term in one elec")
+        for m in config
+            h += int1e[m, m]
+        end
+    else
+        #println("single excit in one elec")
+        #only get single excitation contributation
+        h += int1e[i,a]
+    end#=}}}=#
+    return h
+end
+
+function two_elec(config, int2e, i=0, a=0, j=0, b=0)
+    #Anti symmetry included! compute the two electron contribution{{{
+    g = 0
+    
+    #Diagonal Terms
+    if i == 0 && a == 0 && j == 0 && b == 0 
+        #sum over all electrons (diag term)
+        #println("diagonal in two e")
+        for n = 1:size(config)[1]
+            for m = n+1:size(config)[1]
+                g += int2e[config[n],config[n],config[m],config[m]]
+                g -= int2e[config[n],config[m],config[n],config[m]]
+            end
+        end
+    end
+
+    #Single Excitation Terms
+    if i!= 0 && a!=0 && j==0
+        #single excitation 
+        #println("single")
+        for m in config
+            if m == i
+                continue
+            else
+                g += int2e[m,m,i,a]
+                g -= int2e[m,i,m,a]
+                #from olsen paper i=k and a=l
+            end
+        end
+    end
+
+    if i!= 0 && a!=0 && j!=0 && b!=0
+        #double excitation
+        #println("double in two elec")
+        g += int2e[i, a, j, b]
+        g -= int2e[i, j, a, b]
+    end#=}}}=#
+    return g
+end
+
+function old_get_H_mixed(configs, nelec, norbs, y_matrix, int2e)
+    #configs = [alpha_configs, beta_configs]{{{
+    #nelec = [n_alpha, n_beta]
+    #y_matrix = [y_alpha, y_beta]
+    ndets_a = factorial(norbs) / (factorial(nelec[1])*factorial(norbs-nelec[1])) 
+    ndets_b = factorial(norbs) / (factorial(nelec[2])*factorial(norbs-nelec[2])) 
+    size_mixed = Int(ndets_a*ndets_b)
+    Hmixed = zeros(size_mixed, size_mixed)
+    alpha_dets = size(configs[1])[1]
+
+    for I in configs[1]  #alpha configs bra alpha
+        orbs = [1:norbs;]
+        vir_I = filter!(x->!(x in I), orbs)
+        I_idx = get_index(I, y_matrix[1], norbs)
+        for i in I
+            for a in vir_I      #ket alpha
+                for J in configs[2]     #beta configs bra beta
+                    orbs2 = [1:norbs;]
+                    vir_J = filter!(x->!(x in J), orbs2)
+                    J_idx = get_index(J, y_matrix[2], norbs)
+                    for j in J
+                        for b in vir_J  #ket beta
+                            #i think ill have some double counting in these
+                            I_prim, sort_I, signi = excit_config(deepcopy(I), [i, a])
+                            J_prim, sort_J, signj = excit_config(deepcopy(J), [j, b])
+                            I_prim_idx = get_index(I_prim, y_matrix[1], norbs)
+                            J_prim_idx = get_index(J_prim, y_matrix[2], norbs)
+                            row_idx = Int(J_idx*alpha_dets + I_idx)
+                            column_idx = Int(J_prim_idx*alpha_dets + I_prim_idx)
+                            #println("row : ", row_idx, "column: ", column_idx)
+                            #println("Index I: ", I_prim_idx, " Index J: ", J_prim_idx)
+                            #println("two electron comp iajb: ", int2e[i,a,j,b])
+                            #println("other two electron comp ijab: ", int2e[i,j,a,b])
+                            Hmixed[row_idx, column_idx] += signi*signj*int2e[i, j, a, b]
+                            #Hmixed[column_idx, row_idx] += Hmixed[row_idx, column_idx]
+                        end
+                    end
+                end
+            end
+        end
+    end#=}}}=#
+    return Hmixed
+end
