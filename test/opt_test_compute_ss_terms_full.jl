@@ -1,6 +1,6 @@
 using fci
 using JLD2
-using TimerOutputs
+#using TimerOutputs
 
 @load "_testdata_h8_integrals.jld2"
 @load "_testdata_h8_alpha.jld2"
