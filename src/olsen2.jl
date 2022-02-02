@@ -42,11 +42,11 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     ndets_b = factorial(orbs)÷(factorial(nbeta)*factorial(orbs-nbeta))
     
     #make lookup table
-    println("\n alpha")
+    #println("\n alpha")
     index_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
-    println("\n beta")
+    #println("\n beta")
     index_table_b = make_index_table(beta_configs, ndets_b, ybeta) 
-    error("stop")
+    #error("stop")
     
     Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, orbs, index_table_a, yalpha, int1e, int2e, nalpha)
     Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, orbs, index_table_b, ybeta, int1e, int2e, nbeta)
@@ -146,9 +146,7 @@ function make_index_table(configs, ndets, y_matrix)
         for p in configs[I].config
             for q in vir
                 new_config, sorted_config, sign_s = excit_config(deepcopy(configs[I].config), [p,q])
-                println("config: ", new_config)
                 idx = get_index(new_config, y_matrix, configs[I].norbs)
-                println("index: ", idx)
                 index_table[p,q,configs[I].label]=sign_s*idx
             end
         end
