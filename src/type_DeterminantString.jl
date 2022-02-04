@@ -1,8 +1,9 @@
+using StaticArrays
 
-mutable struct DeterminantString
-    norbs::UInt8
+struct DeterminantString{N}
+    norbs::Int16
     nelec::UInt8
-    config::Vector{Int}
-    #config::MVector{N, Int}
+    config::SVector{N, Int}
+    #config::MVector{N, UInt}
     index::UInt
 end

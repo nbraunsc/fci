@@ -1,7 +1,7 @@
 using fci
 using JLD2
 using LinearAlgebra
-#using BenchmarkTools
+using BenchmarkTools
 
 @load "_testdata_h8_integrals.jld2"
 @load "_testdata_h8.jld2"
@@ -21,10 +21,11 @@ dim = ndets_a*ndets_b
 
 @testset "get sigma3" begin
     oldsigma_test3 = fci.old_get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
-    @time oldsigma_test3 = fci.old_get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+    @time fci.old_get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+    #@btime fci.old_get_sigma3($configs, $norbs, $y_matrix, $int2e, $vector, $index_table_a, $index_table_b, $dim, $ndets_a)
     @test isapprox(sigma3, oldsigma_test3, atol=10e-7)
-    sigma_test3 = fci.get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
-    @time sigma_test3 = fci.get_sigma3(configs, norbs, y_matrix, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
-    #@btime sigma_test3 = fci.get_sigma3($configs, $norbs, $y_matrix, $int2e, $vector, $index_table_a, $index_table_b, $dim, $ndets_a)
+    sigma_test3 = fci.get_sigma3(configs, norbs, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+    @time fci.get_sigma3(configs, norbs, int2e, vector, index_table_a, index_table_b, dim, ndets_a)
+    #@btime fci.get_sigma3($configs, $norbs, $y_matrix, $int2e, $vector, $index_table_a, $index_table_b, $dim, $ndets_a)
     @test isapprox(sigma3, sigma_test3, atol=10e-7)
 end
