@@ -15,10 +15,11 @@ np = pyimport("numpy")
 
 function run_fci(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos
-    int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
-    int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
-    H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
-    ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
+    @load "/Users/nicole/code/fci/test/_testdata_h8.jld2"
+    #int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
+    #int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
+    #H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
+    #ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
     yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
     
     #get all configs
@@ -74,9 +75,6 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     #next vector
     #w = Hmat*V[:,1]
     w = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a, sign_table_a, sign_table_b)
-    #sigma, sigma3 = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a)
-    #vector = V[:,1]
-    #@save "/Users/nicole/code/fci/test/_testdata_h8.jld2" alpha_configs beta_configs yalpha ybeta index_table_a index_table_b Ha_diag H_alpha H_beta sigma3 sigma vector
     #orthogonalise
     T[1,1] = dot(w,V[:,1])
     w = w - T[1,1]*V[:,1]
@@ -568,6 +566,41 @@ function get_sigma(Ha, Hb, Ia, Ib, vector, configs, norbs, y_matrix, int2e, inde
     return sigma
 end
 
+function old_make_xy(norbs, nalpha, nbeta)
+    #makes y matrices for grms indexing{{{
+    n_unocc_a = (norbs-nalpha)+1
+    n_unocc_b = (norbs-nbeta)+1
+
+    #make x matricies
+    xalpha = zeros(n_unocc_a, nalpha+1)
+    xbeta = zeros(n_unocc_b, nbeta+1)
+    #fill first row and columns
+    xalpha[:,1] .= 1
+    xbeta[:,1] .= 1
+    xalpha[1,:] .= 1
+    xbeta[1,:] .= 1
+    
+    for i in 2:nalpha+1
+        for j in 2:n_unocc_a
+            xalpha[j, i] = xalpha[j-1, i] + xalpha[j, i-1]
+        end
+    end
+
+    for i in 2:nbeta+1
+        for j in 2:n_unocc_b
+            xbeta[j, i] = xbeta[j-1, i] + xbeta[j, i-1]
+        end
+    end
+
+    #make y matrices
+    copya = deepcopy(xalpha)
+    copyb = deepcopy(xbeta)
+    arraya = zeros(size(xalpha)[2])
+    arrayb = zeros(size(xbeta)[2])
+    yalpha = vcat(transpose(arraya), xalpha[1:size(xalpha)[1]-1, :])
+    ybeta = vcat(transpose(arrayb), xbeta[1:size(xbeta)[1]-1, :])#=}}}=#
+    return yalpha, ybeta
+end
 function make_xy(norbs, nalpha, nbeta)
     #makes y matrices for grms indexing{{{
     n_unocc_a = (norbs-nalpha)+1
