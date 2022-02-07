@@ -15,7 +15,7 @@ np = pyimport("numpy")
 
 function run_fci(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos
-    @load "/Users/nicole/code/fci/test/_testdata_h8.jld2"
+    @load "/Users/nicole/code/fci/test/data/_testdata_h8.jld2"
     #int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     #int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
     #H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
