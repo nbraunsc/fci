@@ -3,7 +3,7 @@ using Test
 
 @testset "fci.jl" begin
     include("test_compute_ss_terms_full.jl")
-    include("test_get_sigma.jl")
+    include("test_get_sigma3.jl")
     include("test_excit_config.jl")
     
     ##include("test_precompute_spin_diag_terms.jl")

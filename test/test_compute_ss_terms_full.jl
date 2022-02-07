@@ -3,9 +3,9 @@ using JLD2
 using LinearAlgebra
 using BenchmarkTools
 
-@load "_testdata_h8_integrals.jld2"
-@load "_testdata_h8.jld2"
-@load "_testdata_h8_signs.jld2"
+@load "data/_testdata_h8_integrals.jld2"
+@load "data/_testdata_h8.jld2"
+@load "data/_testdata_h8_signs.jld2"
 Ha = H_alpha - Ha_diag
 
 norbs = 8
