@@ -1,25 +1,26 @@
 using fci
-using JLD2
+using StaticArrays
 
-config = [1,2,3]
-sign = 1
+config = SVector{4,Int}([1, 3, 4, 5])
+positions = [1,6]
 
-count = 2 #from bubble sort
-arr = [2,3,4] #from bubble sort
-positions = [1,4]
+sign = -1
+count = 3 #from bubble sort
+arr = [3, 4, 5, 6] #from bubble sort
+i = 1
+j = 6
 
 @testset "excit config" begin
-    spot = first(findall(x->x==positions[1], config))
-    config[spot] = positions[2]
-    config_org = deepcopy(config) 
-    count_test, arr_test = fci.bubble_sort(config)
-    @test count_test == count
-    @test arr_test == arr
-    if iseven(count_test)
-        sign_test = 1
-    else
-        sign_test = -1
-    end
-    @test sign == sign_test
-end
+    config1, arr1, sign1 = fci.old_excit_config(config, positions)
+    println("\n Old Excit Config")
+    @time fci.old_excit_config(config, positions)
+    @test sign == sign1
+    #@test arr == arr1
     
+    config2, arr2, sign2 = fci.excit_config(config, 1, 6)
+    println("\n New Excit Config")
+    @time fci.excit_config(config, 1, 6)
+    @test sign == sign2
+    #@test arr == arr2
+end
+
