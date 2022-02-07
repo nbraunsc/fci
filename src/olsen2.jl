@@ -14,7 +14,7 @@ using fci
 np = pyimport("numpy")
 
 function run_fci(orbs, nalpha, nbeta, m=12)
-    #get eigenvalues from lanczos
+    #get eigenvalues from lanczos{{{
     @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
     #int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     #int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
@@ -130,7 +130,7 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     end
     
     #make T into symmetric matrix of shape (m,m)
-    Tm = T[1:m, 1:m]
+    Tm = T[1:m, 1:m]#=}}}=#
     return Tm, V
 end
 
