@@ -6,7 +6,7 @@ using Printf
 using Combinatorics
 using LinearAlgebra
 using StaticArrays
-using Einsum
+#using Einsum
 using TensorOperations
 using JLD2
 using fci
@@ -15,7 +15,7 @@ np = pyimport("numpy")
 
 function run_fci(orbs, nalpha, nbeta, m=12)
     #get eigenvalues from lanczos
-    @load "/Users/nicole/code/fci/test/data/_testdata_h8.jld2"
+    @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
     #int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     #int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
     #H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
