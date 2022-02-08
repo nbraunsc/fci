@@ -23,15 +23,15 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
     
     #get all configs
-    #configa = zeros(UInt8, orbs)
-    #configb = zeros(UInt8, orbs)
-    #configa[1:nalpha] .= 1
-    #configb[1:nbeta] .= 1
+    configa = zeros(UInt8, orbs)
+    configb = zeros(UInt8, orbs)
+    configa[1:nalpha] .= 1
+    configb[1:nbeta] .= 1
     
-    configa = falses(orbs)
-    configb = falses(orbs)
-    configa[1:nalpha] .= true
-    configb[1:nbeta] .= true
+    #configa = falses(orbs)
+    #configb = falses(orbs)
+    #configa[1:nalpha] .= true
+    #configb[1:nbeta] .= true
 
     alpha_configs = get_all_configs(configa, orbs, yalpha, nalpha)
     beta_configs = get_all_configs(configb, orbs, ybeta, nbeta)
@@ -109,17 +109,6 @@ function run_fci(orbs, nalpha, nbeta, m=12)
         if T[j+1, j] < 10E-10
             @printf("\n\n --------------- Converged at %i iteration ---------------  \n\n", j)
             Tm = T[1:j, 1:j]
-            #println("Tm tridiag matrix")
-            #display(Tm)
-            #Tm_vals = sort(eigvals(Tm))
-            #println("\nTm eigen vals: ")
-            #display(Tm_vals)
-            #println("\nMy eigenvals - nuc:")
-            #x = (my_energies .- nuc)
-            #display(x)
-            #diff = x[1]-Tm_vals[1]
-            #println("\n -------- Diff in eigenvalues ------------")
-            #display(diff)
             return Tm, V
             break
         end 
@@ -601,14 +590,15 @@ function old_make_xy(norbs, nalpha, nbeta)
     ybeta = vcat(transpose(arrayb), xbeta[1:size(xbeta)[1]-1, :])#=}}}=#
     return yalpha, ybeta
 end
+
 function make_xy(norbs, nalpha, nbeta)
     #makes y matrices for grms indexing{{{
     n_unocc_a = (norbs-nalpha)+1
     n_unocc_b = (norbs-nbeta)+1
 
     #make x matricies
-    xalpha = zeros(n_unocc_a, nalpha+1)
-    xbeta = zeros(n_unocc_b, nbeta+1)
+    xalpha = zeros(Int, n_unocc_a, nalpha+1)
+    xbeta = zeros(Int, n_unocc_b, nbeta+1)
     #fill first row and columns
     xalpha[:,1] .= 1
     xbeta[:,1] .= 1
@@ -628,12 +618,8 @@ function make_xy(norbs, nalpha, nbeta)
     end
 
     #make y matrices
-    copya = deepcopy(xalpha)
-    copyb = deepcopy(xbeta)
-    arraya = zeros(size(xalpha)[2])
-    arrayb = zeros(size(xbeta)[2])
-    yalpha = vcat(transpose(arraya), xalpha[1:size(xalpha)[1]-1, :])
-    ybeta = vcat(transpose(arrayb), xbeta[1:size(xbeta)[1]-1, :])#=}}}=#
+    yalpha = vcat(transpose(zeros(Int, nalpha+1)), xalpha[1:n_unocc_a-1, :])
+    ybeta = vcat(transpose(zeros(Int, nbeta+1)), xbeta[1:n_unocc_b-1, :])#=}}}=#
     return yalpha, ybeta
 end
 function old_get_all_configs(config, norbs)
@@ -643,7 +629,7 @@ function old_get_all_configs(config, norbs)
     configs = [] #empty Array
     for i in 1:size(all_configs)[1]
         A = findall(!iszero, all_configs[i])
-        push!(configs,fci.DeterminantString(norbs, nelecs, A, 1, N=nelecs)) 
+        push!(configs,fci.DeterminantString(norbs, nelecs, A, 1)) 
     end
     #=}}}=#
     return configs
@@ -651,10 +637,10 @@ end
 
 function get_all_configs(config, norbs, y, nelecs)
     #get all possible configs from a given start config{{{
-    all_configs = unique(collect(permutations(config, size(config)[1])))
     configs = [] #empty Array
-    for i in 1:size(all_configs)[1]
-        A = findall(all_configs[i])
+    for i in unique(permutations(config, norbs))
+        #A = findall(i)
+        A = findall(!iszero, i)
         b = SVector{nelecs}(A)
         idx = get_index(A, y, norbs)
         push!(configs,fci.DeterminantString(norbs, nelecs, b, idx)) 
@@ -704,7 +690,7 @@ function get_index(config, y, norbs)
             start[1] = start[1]+1
         end
     end#=}}}=#
-    return Int(index)
+    return index
 end
 
 function old_excit_config(config, positions)
@@ -735,6 +721,7 @@ function excit_config(config, i, j)
     
     spot = first(findall(x->x==i, config))
     new = Vector(config)
+    #new = Vector(config)
     new[spot] = j
     count, arr = bubble_sort(new)
     if iseven(count)
