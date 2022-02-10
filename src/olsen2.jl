@@ -13,18 +13,18 @@ using fci
 
 np = pyimport("numpy")
 
-function run_fci(orbs, nalpha, nbeta, m=12)
-    #get eigenvalues from lanczos{{{
+function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=12, tol::Float64=1e-8, maxsubspace::Int=200, roots::Int=1, subspaceincrement::Int=8)
+    #get eigenvalues from lanczos
     @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
     #int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
     #int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
     #H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
     #ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
-    yalpha, ybeta = make_xy(orbs, nalpha, nbeta)
+    yalpha, ybeta = make_xy(norbs, nalpha, nbeta)
     
     #get all configs
-    configa = zeros(UInt8, orbs)
-    configb = zeros(UInt8, orbs)
+    configa = zeros(UInt8, norbs)
+    configb = zeros(UInt8, norbs)
     configa[1:nalpha] .= 1
     configb[1:nbeta] .= 1
     
@@ -32,95 +32,45 @@ function run_fci(orbs, nalpha, nbeta, m=12)
     #configb = falses(orbs)
     #configa[1:nalpha] .= true
     #configb[1:nbeta] .= true
+    ndets_a = factorial(norbs)÷(factorial(nalpha)*factorial(norbs-nalpha))
+    ndets_b = factorial(norbs)÷(factorial(nbeta)*factorial(norbs-nbeta))
 
-    alpha_configs = get_all_configs(configa, orbs, yalpha, nalpha)
-    beta_configs = get_all_configs(configb, orbs, ybeta, nbeta)
-    
-    ndets_a = factorial(orbs)÷(factorial(nalpha)*factorial(orbs-nalpha))
-    ndets_b = factorial(orbs)÷(factorial(nbeta)*factorial(orbs-nbeta))
+    alpha_configs = get_all_configs(configa, norbs, yalpha, nalpha, ndets_a)
+    beta_configs = get_all_configs(configb, norbs, ybeta, nbeta, ndets_b)
     
     #make lookup table
     index_table_a, sign_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
     index_table_b, sign_table_b = make_index_table(beta_configs, ndets_b, ybeta) 
     
-    Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, orbs, index_table_a, yalpha, int1e, int2e, nalpha)
-    Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, orbs, index_table_b, ybeta, int1e, int2e, nbeta)
+    Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, norbs, index_table_a, yalpha, int1e, int2e, nalpha)
+    Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, norbs, index_table_b, ybeta, int1e, int2e, nbeta)
 
     #get H components
-    H_alpha = compute_ss_terms_full(ndets_a, orbs, int1e, int2e, index_table_a, alpha_configs, yalpha, sign_table_a)
-    H_beta = compute_ss_terms_full(ndets_b, orbs, int1e, int2e, index_table_b, beta_configs, ybeta, sign_table_b)
+    H_alpha = compute_ss_terms_full(ndets_a, norbs, int1e, int2e, index_table_a, alpha_configs, yalpha, sign_table_a)
+    H_beta = compute_ss_terms_full(ndets_b, norbs, int1e, int2e, index_table_b, beta_configs, ybeta, sign_table_b)
     #H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
     
     H_alpha = Ha_diag + H_alpha
     H_beta = Hb_diag + H_beta
 
-    Ia = Matrix{Float64}(I, size(H_alpha))
-    Ib = Matrix{Float64}(I, size(H_beta))
+    Ia = SMatrix{ndets_a, ndets_a, UInt8}(Matrix{UInt8}(I, ndets_a, ndets_a))
+    Ib = SMatrix{ndets_b, ndets_b, UInt8}(Matrix{UInt8}(I, ndets_b, ndets_b))
+    dim = ndets_a*ndets_b
+    
     #Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
     #Hmat .+= kron(Ib, H_alpha)
     #Hmat .+= kron(H_beta, Ia)
     #Hmat .+= H_mixed
     #H = .5*(Hmat+Hmat')
     #H = Hmat
-    
-    dim = ndets_a*ndets_b
-    #b = rand(dim)
-    b = zeros(dim)
-    b[1] = 1
-    #initalize empty matrices for T and V
-    T = zeros(Float64, m+1, m)
-    V = zeros(Float64, dim, m+1)
-    #normalize start vector
-    V[:,1] = b/norm(b)
-    #next vector
-    #w = Hmat*V[:,1]
-    w = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,1], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a, sign_table_a, sign_table_b)
-    #orthogonalise
-    T[1,1] = dot(w,V[:,1])
-    w = w - T[1,1]*V[:,1]
-    #normalize next vector
-    T[2,1] = norm(w)
-    V[:,2] = w/T[2,1]
 
-    for j = 2:m
-        #make T symmetric
-        T[j-1, j] = T[j, j-1]
-        
-        #next vector
-        w = get_sigma(H_alpha, H_beta, Ia, Ib, V[:,j], [alpha_configs, beta_configs], orbs, [yalpha, ybeta], int2e, index_table_a, index_table_b, dim, ndets_a, sign_table_a, sign_table_b)
-        #w = Hmat*V[:,j]
-        #orthogonalise agaisnt two previous vectors
-        T[j,j] = dot(w,V[:, j])
-        # below is like this w_3 = w_3 - a_2 |v_2> - b_2 |v_1>
-        w = w - dot(w,V[:,j])*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
-        
-        # note: <v_2 | H | v_0> = 0 so only have to subtract two previous vectors for othogonalization
-        # that is what is being checked below
-        #if j > 3
-        #    value = dot(w, V[:,j-2])
-        #    println("\n overlap with diff >1: ", value)
-        #end
-        
-        #normalize
-        T[j+1, j] = norm(w)
-        V[:,j+1] = w/T[j+1, j]
-
-        #convergence check
-        if T[j+1, j] < 10E-10
-            @printf("\n\n --------------- Converged at %i iteration ---------------  \n\n", j)
-            Tm = T[1:j, 1:j]
-            return Tm, V
-            break
-        end 
-
-        if j == m
-            println("\n ----------- HIT MAX ITERATIONS -------------\n ")
-        end
+    if solver == "lanczos"
+        fci.Lanczos(dim, norbs, nalpha, nbeta, H_alpha, H_beta, Ia, Ib, alpha_configs, beta_configs, int2e, index_table_a, index_table_b, ndets_a, sign_table_a, sign_table_b, max_iter, tol)
     end
-    
-    #make T into symmetric matrix of shape (m,m)
-    Tm = T[1:m, 1:m]#=}}}=#
-    return Tm, V
+
+    if solver == "davidson"
+        fci.Davidson(dim, H_alpha, H_beta, Ia, Ib, alpha_configs, beta_configs, norbs, int2e, index_table_a, index_table_b, ndets_a, sign_table_a, sign_table_b, roots, subspaceincrement, maxsubspace, tol)
+    end
 end
 
 function old_make_index_table(configs, ndets, y_matrix)
@@ -544,14 +494,14 @@ function get_sigma3(configs, norbs, int2e, vector, index_table_a, index_table_b,
     return sigma3
 end
 
-function get_sigma(Ha, Hb, Ia, Ib, vector, configs, norbs, y_matrix, int2e, index_table_a, index_table_b, dim, ndets_a, sign_table_a, sign_table_b)
-    #b = reshape(vector, (size(Ha)[1], size(Hb)[1]))
+function get_sigma(Ha, Hb, Ia, Ib, vector, configs, norbs, int2e, index_table_a, index_table_b, dim, ndets_a, sign_table_a, sign_table_b)
+    #b = reshape(vector, (size(Ha)[1], size(Hb)[1])){{{
     #sigma1 = reshape(Ha*b, (dim, 1))
     #sigma2 = reshape(Hb*transpose(b), (dim, 1))
     sigma1 = kron(Ib, Ha)*vector
     sigma2 = kron(Hb, Ia)*vector
     sigma3 = get_sigma3(configs, norbs, int2e, vector, index_table_a, index_table_b, dim, ndets_a, sign_table_a, sign_table_b)
-    sigma = sigma1 + sigma2 + sigma3
+    sigma = sigma1 + sigma2 + sigma3#=}}}=#
     return sigma
 end
 
@@ -635,15 +585,18 @@ function old_get_all_configs(config, norbs)
     return configs
 end
 
-function get_all_configs(config, norbs, y, nelecs)
+function get_all_configs(config, norbs, y, nelecs, ndets)
     #get all possible configs from a given start config{{{
-    configs = [] #empty Array
+    #configs = NTuple{ndets, fci.DeterminantString} #empty Array
+    #configs = MVector{ndets, fci.DeterminantString} #empty Array
+    #configs = Vector{fci.DeterminantString} #empty Array
+    configs = []
     for i in unique(permutations(config, norbs))
-        #A = findall(i)
+        #A = findall(i) #if config is Bool type
         A = findall(!iszero, i)
         b = SVector{nelecs}(A)
         idx = get_index(A, y, norbs)
-        push!(configs,fci.DeterminantString(norbs, nelecs, b, idx)) 
+        push!(configs, fci.DeterminantString{nelecs}(norbs, nelecs, b, idx)) 
     end
     #=}}}=#
     return configs
@@ -733,7 +686,8 @@ function excit_config(config, i, j)
 end
 
 function bubble_sort(arr)
-    len = size(arr)[1]#={{{=#
+    len = length(arr) #={{{=#
+    #len = size(arr)[1]#={{{=#
     count = 0
     # Traverse through all array elements
     for i = 1:len-1
