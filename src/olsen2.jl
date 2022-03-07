@@ -21,6 +21,9 @@ function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=1
     #H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
     #ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
     yalpha, ybeta = make_xy(norbs, nalpha, nbeta)
+    display(yalpha)
+    display(ybeta)
+    error("stop")
     
     #get all configs
     configa = zeros(UInt8, norbs)
@@ -566,7 +569,8 @@ function make_xy(norbs, nalpha, nbeta)
             xbeta[j, i] = xbeta[j-1, i] + xbeta[j, i-1]
         end
     end
-
+    display(xalpha)
+    display(xbeta)
     #make y matrices
     yalpha = vcat(transpose(zeros(Int, nalpha+1)), xalpha[1:n_unocc_a-1, :])
     ybeta = vcat(transpose(zeros(Int, nbeta+1)), xbeta[1:n_unocc_b-1, :])#=}}}=#
@@ -687,7 +691,7 @@ end
 
 function bubble_sort(arr)
     len = length(arr) #={{{=#
-    #len = size(arr)[1]#={{{=#
+    #len = size(arr)[1]
     count = 0
     # Traverse through all array elements
     for i = 1:len-1

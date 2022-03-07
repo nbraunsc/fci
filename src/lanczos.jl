@@ -43,6 +43,7 @@ function Lanczos(dim, norbs, nalpha, nbeta, H_alpha, H_beta, Ia, Ib, alpha_confi
         T[j+1, j] = norm(w)
         V[:,j+1] = w/T[j+1, j]
 
+        #### i am pretty sure my convergence criteria is not correct 
         #convergence check
         if T[j+1, j] < ϑ
             @printf("\n --------------- Converged at %i iteration ---------------  \n", j)
