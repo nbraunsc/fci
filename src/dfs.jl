@@ -21,9 +21,14 @@ y[2,:] = [0,1,1,1]
 y[3,:] = [0,2,3,4]
 y[4,:] = [0,3,6,10]
 #max = 16
-#
-#
+
 #RAS Graphs for testing
+rasx = Array{Int}(zeros(4,4))
+rasx[1,:] = [1,1,1,0]
+rasx[2,:] = [1,2,3,3]
+rasx[3,:] = [0,0,3,6]
+rasx[4,:] = [0,0,3,9]
+
 rasy = Array{Int}(zeros(4,4))
 rasy[1,:] = [0,0,0,0]
 rasy[2,:] = [0,1,1,0]
@@ -36,7 +41,24 @@ ras_vert[2,:] = [4,5,6,7]
 ras_vert[3,:] = [0,0,8,9]
 ras_vert[4,:] = [0,0,10,11]
 
-function make_node_graph(y,vert)
+function make_vert_graph(x)
+    vert = Array{Int}(zeros(size(x)))
+    count = 1
+    for row in 1:size(x)[1]
+        for column in 1:size(x)[2]
+            if x[row,column] != 0
+                vert[row,column] = count
+                count += 1
+            end
+        end
+    end
+    max = findmax(vert)[1]
+    println("max: ", max)
+    return vert, max
+end
+
+
+function make_graph_dict(y,vert)
     graph = Dict()
     for row in 1:size(y)[1]
         for column in 1:size(y)[2]
@@ -96,7 +118,6 @@ function dfs(graph, start, max, visited=Vector(zeros(max)), path=[], nodes=Dict(
     visited[start]=false
     return nodes
 end
-
 
 function get_index(path, graph)
     index = Int(1)
