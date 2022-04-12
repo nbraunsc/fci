@@ -57,7 +57,6 @@ function make_vert_graph(x)
     return vert, max
 end
 
-
 function make_graph_dict(y,vert)
     graph = Dict()
     for row in 1:size(y)[1]
