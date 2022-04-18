@@ -22,7 +22,8 @@ function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=1
     #ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
     xalpha, yalpha, xbeta, ybeta = make_xy(norbs, nalpha, nbeta)
     display(yalpha)
-    display(ybeta)
+    
+    norbs = fock[1] + fock[2] + fock[3]display(ybeta)
     error("stop")
     
     #get all configs
@@ -569,8 +570,8 @@ function make_xy(norbs, nalpha, nbeta)
             xbeta[j, i] = xbeta[j-1, i] + xbeta[j, i-1]
         end
     end
-    display(xalpha)
-    display(xbeta)
+    #display(xalpha)
+    #display(xbeta)
     #make y matrices
     yalpha = vcat(transpose(zeros(Int, nalpha+1)), xalpha[1:n_unocc_a-1, :])
     ybeta = vcat(transpose(zeros(Int, nbeta+1)), xbeta[1:n_unocc_b-1, :])#=}}}=#
