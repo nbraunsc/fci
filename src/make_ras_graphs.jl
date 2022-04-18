@@ -15,13 +15,13 @@ function make_x(norbs, nalpha)
             xalpha[j, i] = xalpha[j-1, i] + xalpha[j, i-1]
         end
     end
-    return xalpha
+    return xalpha#=}}}=#
 end
 
 function make_ras_graphs(nalpha, nbeta, rasi_min=1, rasiii_max=2, fock=Vector(zeros(3)))
     norbs = fock[1] + fock[2] + fock[3]
-    n_unocc_a = (norbs-nalpha)+1
     if nalpha == nbeta #i.e. closed shell
+        n_unocc_a = (norbs-nalpha)+1#={{{=#
         xalpha = make_x(norbs, nalpha)
         keep_rows = fock[1]+1-rasi_min
         columns = nalpha-rasiii_max
@@ -35,12 +35,13 @@ function make_ras_graphs(nalpha, nbeta, rasi_min=1, rasiii_max=2, fock=Vector(ze
         yalpha = vcat(transpose(zeros(Int16, nalpha+1)), xalpha[1:n_unocc_a-1, :])
         for i in keep_rows+1:size(xalpha)[1]
             yalpha[i,1:columns+1] .=0
-        end
+        end#=}}}=#
         return xalpha, yalpha
     
     else #not closed shell 
-        xalpha = make_x(norbs, nalpha)
+        xalpha = make_x(norbs, nalpha)#={{{=#
         xbeta = make_x(norbs, nbeta)
+        n_unocc_a = (norbs-nalpha)+1
         n_unocc_b = (norbs-nbeta)+1
         keep_rows = fock[1]+1-rasi_min
         columns_a = nalpha-rasiii_max
@@ -67,7 +68,7 @@ function make_ras_graphs(nalpha, nbeta, rasi_min=1, rasiii_max=2, fock=Vector(ze
         ybeta = vcat(transpose(zeros(Int16, nbeta+1)), xbeta[1:n_unocc_b-1, :])
         for i in keep_rows+1:size(xbeta)[1]
             ybeta[i,1:columns_b+1] .=0
-        end
+        end#=}}}=#
         return (xalpha, xbeta), (yalpha, ybeta)
     end
 end
