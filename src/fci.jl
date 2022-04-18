@@ -5,5 +5,5 @@ include("olsen2.jl")
 include("lanczos.jl")
 include("davidson.jl")
 include("type_DeterminantString.jl")
-include("grms.jl")
+include("make_ras_graphs.jl")
 end

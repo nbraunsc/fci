@@ -92,5 +92,44 @@ function make_vert_graph(x)
     return vert
 end
 
+function make_ras_dict(y,vert)
+    graph = Dict()
+    for row in 1:size(y)[1]
+        for column in 1:size(y)[2]
+            #at last row and column
+            if row==size(y)[1] && column==size(y)[2]
+                return graph
+            
+            #at non existent node (RAS graphs)
+            elseif vert[row,column] == 0
+                println("at node zero")
+                continue
+            
+            #at last row or no node present (RAS graphs)
+            elseif row == size(y)[1] || vert[row+1,column]==0
+                graph[vert[row,column]]=Set([vert[row,column+1]])
+                #check if moving right is a node (RAS graphs)
+                if vert[row,column+1] != 0
+                    graph[vert[row,column],vert[row,column+1]] = y[row,column+1]
+                end
+
+            #at last column or no node present (RAS graphs)
+            elseif column == size(y)[2] || vert[row,column+1]==0
+                graph[vert[row,column]]=Set([vert[row+1, column]])
+            
+
+            else
+                graph[vert[row,column]]=Set([vert[row,column+1],vert[row+1,column]])
+                #check if moving right is a node (RAS graphs)
+                if vert[row,column+1] != 0
+                    graph[vert[row,column],vert[row,column+1]] = y[row,column+1]
+                end
+            end
+        end
+    end
+    #max = findmax(ras_vert)[1]
+    #println("max: ", max)
+    return graph
+end
 
     
