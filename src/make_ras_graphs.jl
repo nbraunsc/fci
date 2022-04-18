@@ -36,6 +36,7 @@ function make_ras_graphs(nalpha, nbeta, rasi_min=1, rasiii_max=2, fock=Vector(ze
         for i in keep_rows+1:size(xalpha)[1]
             yalpha[i,1:columns+1] .=0
         end#=}}}=#
+        yalpha[:,1] .= 0
         return xalpha, yalpha
     
     else #not closed shell 
@@ -69,8 +70,26 @@ function make_ras_graphs(nalpha, nbeta, rasi_min=1, rasiii_max=2, fock=Vector(ze
         for i in keep_rows+1:size(xbeta)[1]
             ybeta[i,1:columns_b+1] .=0
         end#=}}}=#
+        #set first column to zeros for vert graph
+        yalpha[:,1] .= 0
+        ybeta[:,1] .= 0
         return (xalpha, xbeta), (yalpha, ybeta)
     end
+end
+
+function make_vert_graph(x)
+    vert = Array{Int16}(zeros(size(x)))
+    count = 1
+    for row in 1:size(x)[1]
+        for column in 1:size(x)[2]
+            if x[row,column] != 0
+                vert[row,column] = count
+                count += 1
+            end
+        end
+    end
+    println("max: ", max)
+    return vert
 end
 
 
