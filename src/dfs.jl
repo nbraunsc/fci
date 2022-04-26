@@ -67,7 +67,6 @@ function make_graph_dict(y,vert)
             
             #at non existent node (RAS graphs)
             elseif vert[row,column] == 0
-                println("at node zero")
                 continue
             
             #at last row or no node present (RAS graphs)

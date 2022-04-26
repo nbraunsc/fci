@@ -132,4 +132,40 @@ function make_ras_dict(y,vert)
     return graph
 end
 
+function dfs_ras(graph, start, max, visited=Vector(zeros(max)), path=[], nodes=Dict())
+    visited[start] = true
+    push!(path, start)
+    if start == max
+        #get config,index, add to nodes dictonary
+        index, config = get_index(path, graph)
+        nodes[index] = config
+    else
+        for i in graph[start]
+            if visited[i]==false
+                dfs_ras(graph,i,max,visited,path,nodes)
+            end
+        end
+    end
+
+    #remove current vertex from path and mark as unvisited
+    pop!(path)
+    visited[start]=false
+    return nodes
+end
+
+function get_index(path, graph)
+    index = Int(1)
+    config = Array{Int}(zeros(3))
+    count = 1
+    for i in 1:length(path)-1
+        if (path[i],path[i+1]) in keys(graph)
+            index += graph[(path[i],path[i+1])]
+            config[count]=i
+            count += 1
+        end
+    end
+    return index, config
+end
+
+
     
