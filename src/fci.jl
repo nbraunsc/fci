@@ -1,9 +1,8 @@
 module fci
 
 # Write your package code here.
-include("olsen2.jl")
+include("olsen.jl")
 include("lanczos.jl")
 include("davidson.jl")
 include("type_DeterminantString.jl")
-include("make_ras_graphs.jl")
 end
