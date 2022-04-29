@@ -20,11 +20,8 @@ function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=1
     #int2e = npzread("/Users/nicole/code/fci/src/data/int2e_4.npy")
     #H_pyscf = npzread("/Users/nicole/code/fci/src/data/H_full_a.npy")
     #ci = npzread("/Users/nicole/code/fci/src/data/cimatrix.npy")
-    xalpha, yalpha, xbeta, ybeta = make_xy(norbs, nalpha, nbeta)
-    display(yalpha)
-    
-    norbs = fock[1] + fock[2] + fock[3]display(ybeta)
-    error("stop")
+    xalpha, yalpha, xbeta, ybeta = old_make_xy(norbs, nalpha, nbeta)
+    #display(yalpha)
     
     #get all configs
     configa = zeros(UInt8, norbs)
@@ -52,7 +49,7 @@ function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=1
     #get H components
     H_alpha = compute_ss_terms_full(ndets_a, norbs, int1e, int2e, index_table_a, alpha_configs, yalpha, sign_table_a)
     H_beta = compute_ss_terms_full(ndets_b, norbs, int1e, int2e, index_table_b, beta_configs, ybeta, sign_table_b)
-    #H_mixed = compute_ab_terms_full(ndets_a, ndets_b, orbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
+    H_mixed = compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
     
     H_alpha = Ha_diag + H_alpha
     H_beta = Hb_diag + H_beta
@@ -61,10 +58,14 @@ function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=1
     Ib = SMatrix{ndets_b, ndets_b, UInt8}(Matrix{UInt8}(I, ndets_b, ndets_b))
     dim = ndets_a*ndets_b
     
-    #Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
-    #Hmat .+= kron(Ib, H_alpha)
-    #Hmat .+= kron(H_beta, Ia)
-    #Hmat .+= H_mixed
+    Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
+    Hmat .+= kron(Ib, H_alpha)
+    Hmat .+= kron(H_beta, Ia)
+    Hmat .+= H_mixed
+    display(Hmat)
+    eig = eigen(Hmat)
+    println(eig.values[1:7])
+    error("stop")
     #H = .5*(Hmat+Hmat')
     #H = Hmat
 
@@ -310,8 +311,8 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
             #excit alpha only
             for p in Ka.config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), [p,q])
-                    idxa = abs(index_table_a[p,q,Ka.label])
+                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), p,q)
+                    idxa = index_table_a[p,q,Ka.index]
 
                     Kprime = idxa + (Kb_idx-1)*ndets_a
                     #alpha beta <ii|jj>
@@ -324,8 +325,8 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
             #excit beta only
             for r in Kb.config
                 for s in virb
-                    b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), [r,s])
-                    idxb = abs(index_table_b[r,s,Kb.label])
+                    b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), r,s)
+                    idxb = abs(index_table_b[r,s,Kb.index])
                     Lprime = Ka_idx + (idxb-1)*ndets_a
                     
                     #alpha beta <ii|jj>
@@ -338,12 +339,12 @@ function compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_tabl
             #excit alpha and beta
             for p in Ka.config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), [p,q])
-                    idxa = abs(index_table_a[p,q,Ka.label])
+                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka.config), p,q)
+                    idxa = abs(index_table_a[p,q,Ka.index])
                     for r in Kb.config
                         for s in virb
-                            b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), [r,s])
-                            idxb = abs(index_table_b[r,s,Kb.label])
+                            b_single, sort_b, sign_b = excit_config(deepcopy(Kb.config), r,s)
+                            idxb = abs(index_table_b[r,s,Kb.index])
                             L = idxa + (idxb-1)*ndets_a
                             Hmat[K,L] += sign_a*sign_b*(int2e[p,q,r,s])
                         end
@@ -509,7 +510,7 @@ function get_sigma(Ha, Hb, Ia, Ib, vector, configs, norbs, int2e, index_table_a,
     return sigma
 end
 
-function old_make_xy(norbs, nalpha, nbeta)
+function old_old_make_xy(norbs, nalpha, nbeta)
     #makes y matrices for grms indexing{{{
     n_unocc_a = (norbs-nalpha)+1
     n_unocc_b = (norbs-nbeta)+1
@@ -545,7 +546,7 @@ function old_make_xy(norbs, nalpha, nbeta)
     return yalpha, ybeta
 end
 
-function make_xy(norbs, nalpha, nbeta)
+function old_make_xy(norbs, nalpha, nbeta)
     #makes y matrices for grms indexing{{{
     n_unocc_a = (norbs-nalpha)+1
     n_unocc_b = (norbs-nbeta)+1
