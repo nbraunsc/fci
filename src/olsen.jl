@@ -4,6 +4,7 @@ using Printf
 using PyCall
 using NPZ
 using StaticArrays
+using TensorOperations
 using JLD2
 
 struct H
@@ -16,6 +17,35 @@ function load_ints()
     return H(int1e, int2e)
 end
 
+function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, nroots=1, tol=1e-6, precompute_ss=false)
+    a_configs = compute_configs(p)[1]
+    b_configs = compute_configs(p)[2]
+    
+    #fill single excitation lookup tables
+    a_lookup = fill_lookup(p, a_configs, p.dima)
+    b_lookup = fill_lookup(p, b_configs, p.dimb)
+
+    if precompute_ss
+        Ha_diag = precompute_spin_diag_terms(a_configs, p.na, p.dima, ints)
+        Hb_diag = precompute_spin_diag_terms(b_configs, p.nb, p.dimb, ints)
+        
+        #compute off diag terms of sigma1 and sigma2
+        Ha = compute_ss_terms_full(a_configs, a_lookup, p.dima, p.no, p.na, ints) + Ha_diag
+        Hb = compute_ss_terms_full(b_configs, b_lookup, p.dimb, p.no, p.nb, ints) + Hb_diag
+
+    else
+        sigma_one = compute_sigma_one(b_configs, b_lookup, ci_vector, ints, p)
+        sigma_two = compute_sigma_two(a_configs, a_lookup, ci_vector, ints, p)
+
+        println(size(sigma_one))
+        println(size(sigma_two))
+        error("stop")
+    end
+
+        #sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
+    return e
+end
+
 
 function build_full_Hmatrix(ints::H, p::FCIProblem)
     Hmat = zeros(p.dim, p.dim)
@@ -24,7 +54,7 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
         a_configs = compute_configs(p)[1]
         
         #fill single excitation lookup tables
-        a_lookup = fill_lookup(p, a_configs)
+        a_lookup = fill_lookup(p, a_configs, p.dima)
         
         #compute diag terms of sigma 1 and sigma 2
         Ha_diag = precompute_spin_diag_terms(a_configs, p.na, p.dima, ints)
@@ -47,8 +77,8 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
         b_configs = compute_configs(p)[2]
     
         #fill single excitation lookup tables
-        a_lookup = fill_lookup(p, a_configs)
-        b_lookup = fill_lookup(p, b_configs)
+        a_lookup = fill_lookup(p, a_configs, p.dima)
+        b_lookup = fill_lookup(p, b_configs, p.dimb)
 
         #compute diag terms of sigma 1 and sigma 2
         Ha_diag = precompute_spin_diag_terms(a_configs, p.na, p.dima, ints)
@@ -68,62 +98,111 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
     return Hmat
 end
 
-function sigma_one(configs, norbs, nelecs, dim, ndim_a, dim_b, lookup, ci_vector, ints::H)
+function compute_sigma_one(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
     #dim is full dim of CI vector
-    sigma_out = zeros(ndim_a, dim_b)
+    sigma_one = zeros(prob.dima, prob.dimb)
 
     h1eff = deepcopy(ints.h1)
     @tensor begin
         h1eff[p,q] -= .5 * ints.h2[p,j,j,q]
     end
     
-    for I in configs
-        I_idx = I[2]
-        I_config = I[1]
-        orbs = [1:norbs;]
-        vir_I = filter!(x->(x in I_config), orbs)
-        I_idx_lin = I_idx + (I_idx-1)*ndim_a
-        F = zeros(ndim_a)
+    ## bb σ1(Iα, Iβ)
+    for I_b in b_configs
+        I_idx = I_b[2]
+        I_config = I_b[1]
+        orbs = [1:prob.no;]
+        vir = filter!(x->!(x in I_config), orbs)
+        #I_idx_lin = I_idx + (I_idx-1)*prob.dima
+        F = zeros(prob.dimb)
         
         ##diag part
-        for i in 1:nelecs
+        for i in 1:prob.nb
             F[I_idx] += ints.h1[I_config[i], I_config[i]]
-            for j in i+1:nelecs
+            for j in i+1:prob.nb
                 F[I_idx] += ints.h2[I_config[i], I_config[i], I_config[j], I_config[j]]
                 F[I_idx] -= ints.h2[I_config[i], I_config[j], I_config[i], I_config[j]]
             end
         end
         
-
-        ##diag part
-        #for i in 1:nelecs
-        #    sigma_out[I_idx_lin] += ints.h1[I_config[i], I_config[i]]*vector[I_idx_lin]
-        #    for j in i+1:nelec
-        #        sigma_out[I_idx_lin] += ints.h2[I_config[i], I_config[i], I_config[j], I_config[j]]*vector[I_idx_lin]
-        #        sigma_out[I_idx_lin] -= ints.h2[I_config[i], I_config[j], I_config[i], I_config[j]]*vector[I_idx_lin]
-        #    end
-        #end
-
         #single excitation
         for k in I_config
             for l in vir
-                K_idx = lookup[k,l,I_idx]
+                K_idx = b_lookup[k,l,I_idx]
                 sign_s = sign(K_idx)
                 F[abs(K_idx)] += sign_s*h1eff[k,l]
-                #double index
+                #double excitation
                 for i in I_config
-                    for j in vir
-                        single, sorted_s, sign_s = excit_config(I_config, k,l)
-                        double, sorted_d, sign_d = excit_config(sorted_s, i,j)
-                        J_idx = configs[sorted_d]
-                        F[J_idx] += 0.5 * sign_s * sign_d * ints.h2[i,j,k,l]
+                    if i != k
+                        for j in vir
+                            if j != l
+                                single, sorted_s, sign_s = excit_config(I_config, k,l)
+                                double, sorted_d, sign_d = excit_config(sorted_s, i,j)
+                                J_idx = b_configs[sorted_d]
+                                F[J_idx] += 0.5 * sign_s * sign_d * ints.h2[i,j,k,l]
+                            end
+                        end
                     end
                 end
             end
         end
-        sigma_out[:, I_idx] = ci_vector*F
+        mat = Diagonal(F)
+        sigma_one += mat*transpose(ci_vector)
+    end
+    return sigma_one
+end
 
-    return sigma_out
+    
+function compute_sigma_two(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
+    sigma_two = zeros(prob.dima, prob.dimb)
+
+    h1eff = deepcopy(ints.h1)
+    @tensor begin
+        h1eff[p,q] -= .5 * ints.h2[p,j,j,q]
+    end
+    ## aa σ2(Iα, Iβ)
+    for I in a_configs
+        I_idx = I[2]
+        I_config = I[1]
+        orbs = [1:prob.no;]
+        vir = filter!(x->!(x in I_config), orbs)
+        #I_idx_lin = I_idx + (I_idx-1)*prob.dima
+        F = zeros(prob.dima)
+        
+        ##diag part
+        for i in 1:prob.na
+            F[I_idx] += ints.h1[I_config[i], I_config[i]]
+            for j in i+1:prob.na
+                F[I_idx] += ints.h2[I_config[i], I_config[i], I_config[j], I_config[j]]
+                F[I_idx] -= ints.h2[I_config[i], I_config[j], I_config[i], I_config[j]]
+            end
+        end
+        
+        #single excitation
+        for k in I_config
+            for l in vir
+                K_idx = a_lookup[k,l,I_idx]
+                sign_s = sign(K_idx)
+                F[abs(K_idx)] += sign_s*h1eff[k,l]
+                #double excitation
+                for i in I_config
+                    if i != k
+                        for j in vir
+                            if j != l
+                                single, sorted_s, sign_s = excit_config(I_config, k,l)
+                                double, sorted_d, sign_d = excit_config(sorted_s, i,j)
+                                J_idx = a_configs[sorted_d]
+                                F[J_idx] += 0.5 * sign_s * sign_d * ints.h2[i,j,k,l]
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        mat = Diagonal(F)
+        sigma_two += mat*ci_vector
+    end
+    return sigma_two
 end
 
 function precompute_spin_diag_terms(configs, nelecs, dim, ints::H)
@@ -284,7 +363,6 @@ function get_all_configs(x, y, nelecs)
     return config_dict#=}}}=#
 end
 
-
 function make_xy(norbs, nelec)
     #makes y matrices for grms indexing{{{
     n_unocc_a = (norbs-nelec)+1
@@ -306,8 +384,8 @@ function make_xy(norbs, nelec)
     return x, y
 end
 
-function fill_lookup(p::FCIProblem, configs)
-    lookup_table = zeros(Int64,p.no, p.no, p.dim)#={{{=#
+function fill_lookup(p::FCIProblem, configs, dim_s)
+    lookup_table = zeros(Int64,p.no, p.no, dim_s)#={{{=#
     orbs = [1:p.no;]
     for i in configs
         vir = filter!(x->!(x in i[1]), [1:p.no;])
