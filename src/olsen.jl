@@ -6,6 +6,7 @@ using NPZ
 using StaticArrays
 using TensorOperations
 using JLD2
+using BenchmarkTools
 
 struct H
     h1::Array
@@ -30,22 +31,26 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, nroots=1, tol=1e-6, 
         Hb_diag = precompute_spin_diag_terms(b_configs, p.nb, p.dimb, ints)
         
         #compute off diag terms of sigma1 and sigma2
-        Ha = compute_ss_terms_full(a_configs, a_lookup, p.dima, p.no, p.na, ints) + Ha_diag
-        Hb = compute_ss_terms_full(b_configs, b_lookup, p.dimb, p.no, p.nb, ints) + Hb_diag
+        Ha = compute_ss_terms_full(a_configs, a_lookup_ov, p.dima, p.no, p.na, ints) + Ha_diag
+        Hb = compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
 
     else
-        sigma_one = compute_sigma_one(b_configs, b_lookup, ci_vector, ints, p)
-        sigma_two = compute_sigma_two(a_configs, a_lookup, ci_vector, ints, p)
-
-        println(size(sigma_one))
-        println(size(sigma_two))
-        error("stop")
+        #@time sigma_one = compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p)
+        #@btime sigma_two = compute_sigma_two_all($a_configs, $a_lookup, $ci_vector, $ints, $p)
+        sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
+        Base.display(vec(sigma_three))
+        
+        error("stop here")
+        #a_lookup_ov = fill_lookup_ov(p, a_configs, p.dima)
+        #b_lookup_ov = fill_lookup_ov(p, b_configs, p.dimb)
+        #@time sigma_one_ov = compute_sigma_one_ov(b_configs, b_lookup_ov, ci_vector, ints, p)
+        #@btime sigma_two_ov = compute_sigma_two_ov($a_configs, $a_lookup_ov, $ci_vector, $ints, $p)
+        
     end
 
         #sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
     return e
 end
-
 
 function build_full_Hmatrix(ints::H, p::FCIProblem)
     Hmat = zeros(p.dim, p.dim)
@@ -98,14 +103,9 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
     return Hmat
 end
 
-function compute_sigma_one(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
-    #dim is full dim of CI vector
+function compute_sigma_one_ov(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
+    #dim is full dim of CI vector{{{
     sigma_one = zeros(prob.dima, prob.dimb)
-
-    h1eff = deepcopy(ints.h1)
-    @tensor begin
-        h1eff[p,q] -= .5 * ints.h2[p,j,j,q]
-    end
     
     ## bb σ1(Iα, Iβ)
     for I_b in b_configs
@@ -125,21 +125,36 @@ function compute_sigma_one(b_configs, b_lookup, ci_vector, ints::H, prob::FCIPro
             end
         end
         
-        #single excitation
+        ##single excitation
         for k in I_config
             for l in vir
                 K_idx = b_lookup[k,l,I_idx]
                 sign_s = sign(K_idx)
-                F[abs(K_idx)] += sign_s*h1eff[k,l]
-                #double excitation
-                for i in I_config
-                    if i != k
+                F[abs(K_idx)] += sign_s*ints.h1[k,l]
+                for m in I_config
+                    if m!=k
+                        F[abs(K_idx)] += sign_s*(ints.h2[k,l,m,m]-ints.h2[k,m,l,m])
+                    end
+                end
+            end
+        end
+                
+        ##double excitation
+        for k in I_config
+            for i in I_config
+                if i>k
+                    for l in vir
                         for j in vir
-                            if j != l
+                            if j>l
                                 single, sorted_s, sign_s = excit_config(I_config, k,l)
                                 double, sorted_d, sign_d = excit_config(sorted_s, i,j)
                                 J_idx = b_configs[sorted_d]
-                                F[J_idx] += 0.5 * sign_s * sign_d * ints.h2[i,j,k,l]
+                                if sign_d == sign_s
+                                    F[abs(J_idx)] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+
+                                else
+                                    F[abs(J_idx)] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+                                end
                             end
                         end
                     end
@@ -149,17 +164,12 @@ function compute_sigma_one(b_configs, b_lookup, ci_vector, ints::H, prob::FCIPro
         mat = Diagonal(F)
         sigma_one += mat*transpose(ci_vector)
     end
-    return sigma_one
+    return sigma_one #=}}}=#
 end
 
-    
-function compute_sigma_two(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
-    sigma_two = zeros(prob.dima, prob.dimb)
+function compute_sigma_two_ov(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
+    sigma_two = zeros(prob.dima, prob.dimb)#={{{=#
 
-    h1eff = deepcopy(ints.h1)
-    @tensor begin
-        h1eff[p,q] -= .5 * ints.h2[p,j,j,q]
-    end
     ## aa σ2(Iα, Iβ)
     for I in a_configs
         I_idx = I[2]
@@ -183,16 +193,31 @@ function compute_sigma_two(a_configs, a_lookup, ci_vector, ints::H, prob::FCIPro
             for l in vir
                 K_idx = a_lookup[k,l,I_idx]
                 sign_s = sign(K_idx)
-                F[abs(K_idx)] += sign_s*h1eff[k,l]
-                #double excitation
-                for i in I_config
-                    if i != k
+                F[abs(K_idx)] += sign_s*ints.h1[k,l]
+                for m in I_config
+                    if m!=k
+                        F[abs(K_idx)] += sign_s*(ints.h2[k,l,m,m]-ints.h2[k,m,l,m])
+                    end
+                end
+            end
+        end
+
+        #double excitation
+        for k in I_config
+            for i in I_config
+                if i > k
+                    for l in vir
                         for j in vir
-                            if j != l
+                            if j > l
                                 single, sorted_s, sign_s = excit_config(I_config, k,l)
                                 double, sorted_d, sign_d = excit_config(sorted_s, i,j)
                                 J_idx = a_configs[sorted_d]
-                                F[J_idx] += 0.5 * sign_s * sign_d * ints.h2[i,j,k,l]
+                                if sign_d == sign_s
+                                    F[abs(J_idx)] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+
+                                else
+                                    F[abs(J_idx)] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+                                end
                             end
                         end
                     end
@@ -202,8 +227,176 @@ function compute_sigma_two(a_configs, a_lookup, ci_vector, ints::H, prob::FCIPro
         mat = Diagonal(F)
         sigma_two += mat*ci_vector
     end
+    return sigma_two#=}}}=#
+end
+
+function compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
+    ## bb σ1(Iα, Iβ)
+    sigma_one = zeros(prob.dima, prob.dimb)
+    
+    h1eff = deepcopy(ints.h1)
+    @tensor begin
+        h1eff[p,q] -= .5 * ints.h2[p,j,j,q]
+    end
+    
+    for I_b in b_configs
+        I_idx = I_b[2]
+        I_config = I_b[1]
+        F = zeros(prob.dimb)
+        
+        ##single excitation
+        for k in 1:prob.no
+            for l in 1:prob.no
+                K_idx = b_lookup[k,l,I_idx]
+                if K_idx == 0
+                    continue
+                end
+                sign_kl = sign(K_idx)
+                K = abs(K_idx)
+                F[K] += sign_kl*h1eff[k,l]
+               
+                #double excitation
+                for i in 1:prob.no
+                    for j in 1:prob.no
+                        J_idx = b_lookup[i,j,K]
+                        if J_idx == 0 
+                            continue
+                        end
+                        sign_ij = sign(J_idx)
+                        J = abs(J_idx)
+                        if sign_kl == sign_ij
+                            F[J] += 0.5*ints.h2[i,j,k,l]
+                        else
+                            F[J] -= 0.5*ints.h2[i,j,k,l]
+                        end
+                    end
+                end
+            end
+        end
+        #mat = Diagonal(F)
+        #sigma_one += transpose(mat*transpose(ci_vector))
+         
+        for Ja in 1:prob.dimb
+            for Kb in 1:prob.dima
+                sigma_one[Kb, I_idx] += F[Ja]*ci_vector[Kb,Ja]
+            end
+        end
+
+    end
+    return sigma_one
+end
+
+function compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
+    ## aa σ2(Iα, Iβ)
+    sigma_two = zeros(prob.dima, prob.dimb)
+
+    h1eff = deepcopy(ints.h1)
+    @tensor begin
+        h1eff[p,q] -= .5 * ints.h2[p,j,j,q]
+    end
+    
+    for I_a in a_configs
+        I_idx = I_a[2]
+        I_config = I_a[1]
+        F = zeros(prob.dima)
+        
+        #single excitation
+        for k in 1:prob.no
+            for l in 1:prob.no
+                K_idx = a_lookup[k,l,I_idx]
+                if K_idx == 0
+                    continue
+                end
+                sign_kl = sign(K_idx)
+                K = abs(K_idx)
+                F[K] += sign_kl*h1eff[k,l]
+                
+                #double excitation
+                for i in 1:prob.no
+                    for j in 1:prob.no
+                        J_idx = a_lookup[i,j,K]
+                        if J_idx == 0 
+                            continue
+                        end
+                        sign_ij = sign(J_idx)
+                        J = abs(J_idx)
+                        if sign_kl == sign_ij
+                            F[J] += 0.5*ints.h2[i,j,k,l]
+                        else
+                            F[J] -= 0.5*ints.h2[i,j,k,l]
+                        end
+                    end
+                end
+            end
+        end
+        #mat = Diagonal(F)
+        #sigma_two += mat*ci_vector
+        
+        for Ja in 1:prob.dima
+            for Kb in 1:prob.dimb
+                sigma_two[I_idx, Kb] += F[Ja]*ci_vector[Ja,Kb]
+            end
+        end
+
+    end
     return sigma_two
 end
+
+function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints::H, prob::FCIProblem)
+    sigma_three = zeros(prob.dima, prob.dimb)
+
+    for k in prob.no
+        for l in prob.no
+            L = Vector{Int32}()
+            R = Vector{Int32}()
+            sign_I = Vector{Int32}()
+            # compute all k->l excitations of alpha ket
+            # config R -> config L with a k->l excitation
+            for I in a_configs
+                Iidx = a_lookup[k,l,I[2]]
+                if Iidx != 0
+                    push!(R,I[2])
+                    push!(L,abs(Iidx))
+                    push!(sign_I, sign(Iidx))
+                end
+            end
+            
+            #Gather
+            # .* is vectorized multiplication
+            Ckl = ci_vector[L, :]
+            Ckl_prime = sign_I .* Ckl
+
+            #look over beta configs
+            for Ib in b_configs
+                F = zeros(prob.dimb)
+
+                #loop over i->j excitations of beta ket
+                for i in prob.no
+                    for j in prob.no
+                        Jb = b_lookup[i,j,Ib[2]]
+                        if Jb == 0
+                            continue
+                        end
+                        sign_ij = sign(Jb)
+                        J = abs(Jb)
+                        F[J] += sign_ij*ints.h2[i,j,k,l]
+                    end
+                end
+                
+                VI = Ckl_prime*F
+                #Scatter
+                for Li in 1:length(VI)
+                    sigma_three[R[Li], Ib[2]] += VI[Li]
+                end
+
+            println(Ib[2])
+            Base.display(sigma_three)
+            end
+        end
+    end
+    return sigma_three
+end
+
 
 function precompute_spin_diag_terms(configs, nelecs, dim, ints::H)
     Hout = zeros(dim, dim)
@@ -296,7 +489,7 @@ function compute_ab_terms_full(ints::H, prob::FCIProblem, a_configs, b_configs, 
             #excit alpha only
             for p in Ka_config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka_config), p,q)
+                    a_single, sort_a, sign_a = excit_config(Ka_config, p,q)
                     idxa = abs(a_lookup[p,q,Ka_idx])
                     Kprime = idxa + (Kb_idx-1)*prob.dima
                     #alpha beta <ii|jj>
@@ -309,7 +502,7 @@ function compute_ab_terms_full(ints::H, prob::FCIProblem, a_configs, b_configs, 
             #excit beta only
             for r in Kb_config
                 for s in virb
-                    b_single, sort_b, sign_b = excit_config(deepcopy(Kb_config), r,s)
+                    b_single, sort_b, sign_b = excit_config(Kb_config, r,s)
                     idxb = abs(b_lookup[r,s,Kb_idx])
                     Lprime = Ka_idx + (idxb-1)*prob.dima
                     
@@ -323,11 +516,11 @@ function compute_ab_terms_full(ints::H, prob::FCIProblem, a_configs, b_configs, 
             #excit alpha and beta
             for p in Ka_config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(deepcopy(Ka_config), p,q)
+                    a_single, sort_a, sign_a = excit_config(Ka_config, p,q)
                     idxa = abs(a_lookup[p,q,Ka_idx])
                     for r in Kb_config
                         for s in virb
-                            b_single, sort_b, sign_b = excit_config(deepcopy(Kb_config), r,s)
+                            b_single, sort_b, sign_b = excit_config(Kb_config, r,s)
                             idxb = abs(b_lookup[r,s,Kb_idx])
                             L = idxa + (idxb-1)*prob.dima
                             Hmat[K,L] += sign_a*sign_b*(ints.h2[p,q,r,s])
@@ -384,7 +577,7 @@ function make_xy(norbs, nelec)
     return x, y
 end
 
-function fill_lookup(p::FCIProblem, configs, dim_s)
+function fill_lookup_ov(p::FCIProblem, configs, dim_s)
     lookup_table = zeros(Int64,p.no, p.no, dim_s)#={{{=#
     orbs = [1:p.no;]
     for i in configs
@@ -394,6 +587,28 @@ function fill_lookup(p::FCIProblem, configs, dim_s)
                 new_config, sorted_config, sign_s = excit_config(i[1], p, q)
                 idx = configs[sorted_config]
                 lookup_table[p,q,i[2]] = sign_s*idx
+            end
+        end
+    end#=}}}=#
+    return lookup_table
+end
+
+function fill_lookup(prob::FCIProblem, configs, dim_s)
+    lookup_table = zeros(Int64,prob.no, prob.no, dim_s)#={{{=#
+    orbs = [1:prob.no;]
+    for i in configs
+        vir = filter!(x->!(x in i[1]), [1:prob.no;])
+        for p in i[1]
+            for q in 1:prob.no
+                if p == q
+                    lookup_table[p,q,i[2]] = i[2]
+                end
+
+                if q in vir
+                    new_config, sorted_config, sign_s = excit_config(i[1], p, q)
+                    idx = configs[sorted_config]
+                    lookup_table[p,q,i[2]] = sign_s*idx
+                end
             end
         end
     end#=}}}=#

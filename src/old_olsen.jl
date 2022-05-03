@@ -13,7 +13,7 @@ using fci
 
 np = pyimport("numpy")
 
-function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=12, tol::Float64=1e-8, maxsubspace::Int=200, roots::Int=1, subspaceincrement::Int=8)
+function run_fci(norbs, nalpha, nbeta, vector=nothing, solver::String="lanczos", max_iter::Int=12, tol::Float64=1e-8, maxsubspace::Int=200, roots::Int=1, subspaceincrement::Int=8)
     #get eigenvalues from lanczos
     @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
     #int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
@@ -42,6 +42,10 @@ function run_fci(norbs, nalpha, nbeta, solver::String="lanczos", max_iter::Int=1
     #make lookup table
     index_table_a, sign_table_a = make_index_table(alpha_configs, ndets_a, yalpha) 
     index_table_b, sign_table_b = make_index_table(beta_configs, ndets_b, ybeta) 
+
+    sigma3 = get_sigma3([alpha_configs, beta_configs], norbs, int2e, vector, index_table_a, index_table_b, ndets_a*ndets_b, ndets_a, sign_table_a, sign_table_b)
+    display(sigma3)
+    error("stop here")
     
     Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, norbs, index_table_a, yalpha, int1e, int2e, nalpha)
     Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, norbs, index_table_b, ybeta, int1e, int2e, nbeta)
@@ -195,11 +199,6 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
     Ha = zeros(ndets, ndets)#={{{=#
     nelecs = size(configs[1].config)[1]
     
-    #h1eff = deepcopy(int1e)
-    #@tensor begin
-    #    h1eff[p,q] -= .5 * int2e[p,j,j,q]
-    #end
-    
     for I in configs #Ia or Ib, configs=list of all possible determinants
         I_idx = I.index
         F = zeros(ndets)
@@ -243,45 +242,6 @@ function compute_ss_terms_full(ndets, norbs, int1e, int2e, index_table, configs,
                 end
             end
         end
-        ##single excitation
-        #for k in I.config
-        #    for l in vir
-        #        #annihlate electron in orb k
-        #        config_single_idx = index_table[k,l,I_idx]
-        #        sign_s = sign_table[k,l,I_idx]
-        #        F[abs(config_single_idx)] += sign_s*int1e[k,l]
-        #        for m in I.config
-        #            if m!=k
-        #                F[abs(config_single_idx)] += sign_s*(int2e[k,l,m,m]-int2e[k,m,l,m])
-        #            end
-        #        end
-        #    end
-        #end
-        #
-        ##double excitation
-        #for k in I.config
-        #    for i in I.config
-        #        if i>k
-        #            for l in vir
-        #                for j in vir
-        #                    if j>l
-        #                        single, sorted_s, sign_s = excit_config(I.config, k,l)
-        #                        double, sorted_d, sign_d = excit_config(sorted_s, i,j)
-        #                        idx = get_index(double, y_matrix, I.norbs)
-        #                        if sign_d == sign_s
-        #                            F[abs(idx)] += (int2e[i,j,k,l] - int2e[i,l,j,k]) #one that works for closed
-
-        #                        else
-        #                            F[abs(idx)] -= (int2e[i,j,k,l] - int2e[i,l,j,k]) #one that works for closed
-        #                        end
-        #                    end
-        #                end
-        #            end
-        #        end
-        #    end
-        #end
-
-            
         Ha[:,I_idx] .= F
     end#=}}}=#
     return Ha
