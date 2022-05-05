@@ -13,7 +13,7 @@ using fci
 
 np = pyimport("numpy")
 
-function run_fci(norbs, nalpha, nbeta, vector=nothing, solver::String="lanczos", max_iter::Int=12, tol::Float64=1e-8, maxsubspace::Int=200, roots::Int=1, subspaceincrement::Int=8)
+function old_run_fci(norbs, nalpha, nbeta, vector=nothing, solver::String="lanczos", max_iter::Int=12, tol::Float64=1e-8, maxsubspace::Int=200, roots::Int=1, subspaceincrement::Int=8)
     #get eigenvalues from lanczos
     @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
     #int1e = npzread("/Users/nicole/code/fci/src/data/int1e_4.npy")
@@ -45,7 +45,6 @@ function run_fci(norbs, nalpha, nbeta, vector=nothing, solver::String="lanczos",
 
     sigma3 = get_sigma3([alpha_configs, beta_configs], norbs, int2e, vector, index_table_a, index_table_b, ndets_a*ndets_b, ndets_a, sign_table_a, sign_table_b)
     display(sigma3)
-    error("stop here")
     
     Ha_diag = precompute_spin_diag_terms(alpha_configs, ndets_a, norbs, index_table_a, yalpha, int1e, int2e, nalpha)
     Hb_diag = precompute_spin_diag_terms(beta_configs, ndets_b, norbs, index_table_b, ybeta, int1e, int2e, nbeta)
@@ -53,7 +52,7 @@ function run_fci(norbs, nalpha, nbeta, vector=nothing, solver::String="lanczos",
     #get H components
     H_alpha = compute_ss_terms_full(ndets_a, norbs, int1e, int2e, index_table_a, alpha_configs, yalpha, sign_table_a)
     H_beta = compute_ss_terms_full(ndets_b, norbs, int1e, int2e, index_table_b, beta_configs, ybeta, sign_table_b)
-    H_mixed = compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
+    #H_mixed = compute_ab_terms_full(ndets_a, ndets_b, norbs, int1e, int2e, index_table_a, index_table_b, alpha_configs, beta_configs, yalpha, ybeta)
     
     H_alpha = Ha_diag + H_alpha
     H_beta = Hb_diag + H_beta
@@ -62,14 +61,14 @@ function run_fci(norbs, nalpha, nbeta, vector=nothing, solver::String="lanczos",
     Ib = SMatrix{ndets_b, ndets_b, UInt8}(Matrix{UInt8}(I, ndets_b, ndets_b))
     dim = ndets_a*ndets_b
     
-    Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
-    Hmat .+= kron(Ib, H_alpha)
-    Hmat .+= kron(H_beta, Ia)
-    Hmat .+= H_mixed
-    display(Hmat)
-    eig = eigen(Hmat)
-    println(eig.values[1:7])
-    error("stop")
+    #Hmat = zeros(ndets_a*ndets_b, ndets_a*ndets_b)
+    #Hmat .+= kron(Ib, H_alpha)
+    #Hmat .+= kron(H_beta, Ia)
+    #Hmat .+= H_mixed
+    #display(Hmat)
+    #eig = eigen(Hmat)
+    #println(eig.values[1:7])
+    #error("stop")
     #H = .5*(Hmat+Hmat')
     #H = Hmat
 

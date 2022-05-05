@@ -14,11 +14,15 @@ struct H
 end
 
 function load_ints()
-    @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
-    return H(int1e, int2e)
+    #@load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
+    @load "/Users/nicole/code/fci/test/data/_testdata_h4_triplet_integrals.jld2"
+    return H(one, two)
+    #return H(int1e, int2e)
 end
 
-function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, nroots=1, tol=1e-6, precompute_ss=false)
+function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=1, tol=1e-6, precompute_ss=false)
+    np = pyimport("numpy")
+    e_vals = npzread("/Users/nicole/code/fci/src/data/eigenvals_elec.npy")
     a_configs = compute_configs(p)[1]
     b_configs = compute_configs(p)[2]
     
@@ -31,13 +35,38 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, nroots=1, tol=1e-6, 
         Hb_diag = precompute_spin_diag_terms(b_configs, p.nb, p.dimb, ints)
         
         #compute off diag terms of sigma1 and sigma2
+        a_lookup_ov = fill_lookup_ov(p, a_configs, p.dima)
+        b_lookup_ov = fill_lookup_ov(p, b_configs, p.dimb)
         Ha = compute_ss_terms_full(a_configs, a_lookup_ov, p.dima, p.no, p.na, ints) + Ha_diag
         Hb = compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
+        
+        e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
+        println("Eigenvalue: ", e)
+        println("Eigenvalues from pyscf: ", e_vals)
+        
+        #Hmat = compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup){{{
+        #Ia = SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I, p.dima, p.dima))
+        #Ib = SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I, p.dimb, p.dimb))
+        #sigma1 = kron(Hb, Ia)*vec(ci_vector)
+        #sigma2 = kron(Ib, Ha)*vec(ci_vector)
+        #sigma3 = Hmat*vec(ci_vector)
+        
+        #@time sigma_one = compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p)
+        #@time sigma_two = compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p)
+        #@time sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
+        #diff1 = sigma1-vec(sigma_one)
+        #diff2 = sigma2-vec(sigma_two)
+        #diff3 = sigma3-vec(sigma_three)
+        #Base.display(diff2)}}}
 
     else
-        @time sigma_one = compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p)
-        @time sigma_two = compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p)
-        @time sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
+        e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, ci_vector, max_iter, tol)
+        println("Eigenvalue: ", e)
+        println("Eigenvalues from pyscf: ", e_vals)
+
+        #@time sigma_one = compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p){{{
+        #@time sigma_two = compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p)
+        #@time sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
         #@btime sigma_two = compute_sigma_two_all($a_configs, $a_lookup, $ci_vector, $ints, $p)
         
         #a_lookup_ov = fill_lookup_ov(p, a_configs, p.dima)
@@ -47,17 +76,34 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, nroots=1, tol=1e-6, 
         #a_lookup_ov = fill_lookup_ov(p, a_configs, p.dima)
         #b_lookup_ov = fill_lookup_ov(p, b_configs, p.dimb)
         #@time sigma_three_ov = get_sigma3_unvec(a_configs, b_configs, ci_vector, a_lookup_ov, b_lookup_ov, ints, p)
-        #mat_sigma3 = reshape(sigma_three_ov, p.dima, p.dimb) 
-        error("stop here")
-        
+        #mat_sigma3 = reshape(sigma_three_ov, p.dima, p.dimb) }}}
     end
-
-        #sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
     return e
 end
 
+function matvec(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, Ha, Hb, ci_vector=nothing)
+    Ia = SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I, p.dima, p.dima))
+    Ib = SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I, p.dimb, p.dimb))
+    sigma1 = kron(Hb, Ia)*ci_vector
+    sigma2 = kron(Ib, Ha)*ci_vector
+    sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p))
+    sigma = sigma1 + sigma2 + sigma3
+    return sigma
+end
+
+function matvec(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, ci_vector=nothing)
+    sigma1 = vec(compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p))
+    sigma2 = vec(compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p))
+    sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p))
+    sigma = sigma1 + sigma2 + sigma3
+    return sigma
+end
+
+
 function build_full_Hmatrix(ints::H, p::FCIProblem)
-    Hmat = zeros(p.dim, p.dim)
+    Hmat = zeros(p.dim, p.dim)#={{{=#
+    np = pyimport("numpy")
+    e_vals = npzread("/Users/nicole/code/fci/src/data/eigenvals_elec.npy")
     #if closed shell only compute single spin
     if p.na == p.nb 
         a_configs = compute_configs(p)[1]
@@ -78,6 +124,7 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
         Hmat .+= compute_ab_terms_full(ints, p, a_configs, a_configs, a_lookup, a_lookup)
         eig = eigen(Hmat)
         println(eig.values[1:7])
+        println("Eigenvalues from pyscf: ", e_vals)
         error("stop")
     
     #if open shell must compute alpha and beta separately
@@ -102,8 +149,7 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
         
         #compute both diag and off diag terms for sigma3 (mixed spin sigma)
         Hmat .+= compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup)
-    end
-
+    end#=}}}=#
     return Hmat
 end
 
@@ -237,6 +283,7 @@ end
 function compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
     ## bb σ1(Iα, Iβ){{{
     sigma_one = zeros(prob.dima, prob.dimb)
+    ci_vector = reshape(ci_vector, prob.dima, prob.dimb)
     
     h1eff = deepcopy(ints.h1)
     @tensor begin
@@ -295,9 +342,10 @@ end
 function compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
     ## aa σ2(Iα, Iβ){{{
     sigma_two = zeros(prob.dima, prob.dimb)
+    ci_vector = reshape(ci_vector, prob.dima, prob.dimb)
 
     h1eff = deepcopy(ints.h1)
-    @tensor begin
+    @tensor begin 
         h1eff[p,q] -= .5 * ints.h2[p,j,j,q]
     end
     
@@ -349,7 +397,8 @@ function compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints::H, prob::FC
 end
 
 function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints::H, prob::FCIProblem)
-    sigma_three = zeros(prob.dima, prob.dimb)
+    sigma_three = zeros(prob.dima, prob.dimb)#={{{=#
+    ci_vector = reshape(ci_vector, prob.dima, prob.dimb)
     for k in 1:prob.no
         for l in 1:prob.no
             L = Vector{Int32}()
@@ -398,7 +447,7 @@ function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector
             end
         end
     end
-    return sigma_three
+    return sigma_three#=}}}=#
 end
 
 function get_sigma3_unvec(a_configs, b_configs, vector, a_lookup, b_lookup, ints::H, prob::FCIProblem)
@@ -603,6 +652,7 @@ function compute_ab_terms_full(ints::H, prob::FCIProblem, a_configs, b_configs, 
             end
         end
     end#=}}}=#
+
     return Hmat#=}}}=#
 end
     
