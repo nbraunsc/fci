@@ -656,7 +656,6 @@ function compute_ab_terms_full(ints::H, prob::FCIProblem, a_configs, b_configs, 
     return Hmat#=}}}=#
 end
     
-        
 function compute_configs(p::FCIProblem)
     ### {{{
     xalpha, yalpha = make_xy(p.no, p.na)
