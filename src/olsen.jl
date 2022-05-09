@@ -9,6 +9,7 @@ using JLD2
 using BenchmarkTools
 #using StatProfilerHTML
 #using Profile
+using InteractiveUtils
 
 struct H
     h1::Array
@@ -16,7 +17,8 @@ struct H
 end
 
 function load_ints()
-    @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
+    @load "./test/data/_testdata_h8_integrals.jld2"
+    #@load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
     #@load "/Users/nicole/code/fci/test/data/_testdata_h4_triplet_integrals.jld2"
     #return H(one, two)
     return H(int1e, int2e)
@@ -274,6 +276,9 @@ end
 function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints::H, prob::FCIProblem)
     sigma_three = zeros(prob.dima, prob.dimb)#={{{=#
     ci_vector = reshape(ci_vector, prob.dima, prob.dimb)
+                
+    F = zeros(prob.dimb)
+    hkl = zeros(prob.no, prob.no)
     for k in 1:prob.no
         for l in 1:prob.no
             L = Vector{Int32}()
@@ -294,23 +299,39 @@ function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector
             # .* is vectorized multiplication
             Ckl = ci_vector[L, :]
             Ckl_prime = sign_I .* Ckl
+                
+            #@views hkl = ints.h2[:,:,k,l]
 
+            hkl .= ints.h2[:,:,k,l]
+            
             #look over beta configs
             for Ib in b_configs
-                F = zeros(prob.dimb)
 
+                fill!(F,0.0)
+
+                
+                #@code_warntype _update_F!(hkl, F, b_lookup, Ib, prob)
+                #error("here")
+                _update_F!(hkl, F, b_lookup, Ib, prob)
+                #@views hkl = ints.h2[:,:,k,l]
                 #loop over i->j excitations of beta ket
-                for i in 1:prob.no
-                    for j in 1:prob.no
-                        Jb = b_lookup[i,j,Ib[2]]
-                        if Jb == 0
-                            continue
-                        end
-                        sign_ij = sign(Jb)
-                        J = abs(Jb)
-                        F[J] += sign_ij*ints.h2[i,j,k,l]
-                    end
-                end
+#                for j in 1:prob.no
+#                    jkl_idx = j-1 + (k-1)*prob.no + (l-1)*prob.no*prob.no 
+#                    for i in 1:prob.no
+#
+#                        ijkl_idx = (i-1) + jkl_idx*prob.no + 1
+#
+#                        Jb = b_lookup[i,j,Ib[2]]
+#                        if Jb == 0
+#                            continue
+#                        end
+#                        sign_ij = sign(Jb)
+#                        J = abs(Jb)
+#                        #@inbounds F[J] += sign_ij*hkl[i,j]
+#                        #@inbounds F[J] += sign_ij*ints.h2[ijkl_idx]
+#                        F[J] += sign_ij*ints.h2[i,j,k,l]
+#                    end
+#                end
                 
                 #VI = Ckl*F.*sign_I
                 VI = Ckl_prime*F
@@ -324,6 +345,27 @@ function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector
     end
     return sigma_three#=}}}=#
 end
+
+function _update_F!(hkl, F, b_lookup::Array{Int,3}, Ib, prob)
+    for j in 1:prob.no
+        #jkl_idx = j-1 + (k-1)*prob.no + (l-1)*prob.no*prob.no 
+        for i in 1:prob.no
+
+            #ijkl_idx = (i-1) + jkl_idx*prob.no + 1
+
+            Jb = b_lookup[i,j,Ib[2]]
+            if Jb == 0
+                continue
+            end
+            sign_ij = sign(Jb)
+            J = abs(Jb)
+            @inbounds F[J] += sign_ij*hkl[i,j]
+            #@inbounds F[J] += sign_ij*ints.h2[ijkl_idx]
+            #F[J] += sign_ij*ints.h2[i,j,k,l]
+        end
+    end
+end
+
 
 function compute_sigma_one_ov(b_configs, b_lookup_ov, ci_vector, ints::H, prob::FCIProblem)
     #dim is full dim of CI vector{{{
