@@ -7,8 +7,8 @@ using StaticArrays
 using TensorOperations
 using JLD2
 using BenchmarkTools
-using StatProfilerHTML
-using Profile
+#using StatProfilerHTML
+#using Profile
 
 struct H
     h1::Array
@@ -153,133 +153,6 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
         Hmat .+= compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup)
     end#=}}}=#
     return Hmat
-end
-
-function compute_sigma_one_ov(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
-    #dim is full dim of CI vector{{{
-    sigma_one = zeros(prob.dima, prob.dimb)
-    
-    ## bb σ1(Iα, Iβ)
-    for I_b in b_configs
-        I_idx = I_b[2]
-        I_config = I_b[1]
-        orbs = [1:prob.no;]
-        vir = filter!(x->!(x in I_config), orbs)
-        #I_idx_lin = I_idx + (I_idx-1)*prob.dima
-        F = zeros(prob.dimb)
-        
-        ##diag part
-        for i in 1:prob.nb
-            F[I_idx] += ints.h1[I_config[i], I_config[i]]
-            for j in i+1:prob.nb
-                F[I_idx] += ints.h2[I_config[i], I_config[i], I_config[j], I_config[j]]
-                F[I_idx] -= ints.h2[I_config[i], I_config[j], I_config[i], I_config[j]]
-            end
-        end
-        
-        ##single excitation
-        for k in I_config
-            for l in vir
-                K_idx = b_lookup[k,l,I_idx]
-                sign_s = sign(K_idx)
-                F[abs(K_idx)] += sign_s*ints.h1[k,l]
-                for m in I_config
-                    if m!=k
-                        F[abs(K_idx)] += sign_s*(ints.h2[k,l,m,m]-ints.h2[k,m,l,m])
-                    end
-                end
-            end
-        end
-                
-        ##double excitation
-        for k in I_config
-            for i in I_config
-                if i>k
-                    for l in vir
-                        for j in vir
-                            if j>l
-                                single, sorted_s, sign_s = excit_config(I_config, k,l)
-                                double, sorted_d, sign_d = excit_config(sorted_s, i,j)
-                                J_idx = b_configs[sorted_d]
-                                if sign_d == sign_s
-                                    F[abs(J_idx)] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
-
-                                else
-                                    F[abs(J_idx)] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        mat = Diagonal(F)
-        sigma_one += mat*transpose(ci_vector)
-    end
-    return sigma_one #=}}}=#
-end
-
-function compute_sigma_two_ov(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
-    sigma_two = zeros(prob.dima, prob.dimb)#={{{=#
-
-    ## aa σ2(Iα, Iβ)
-    for I in a_configs
-        I_idx = I[2]
-        I_config = I[1]
-        orbs = [1:prob.no;]
-        vir = filter!(x->!(x in I_config), orbs)
-        #I_idx_lin = I_idx + (I_idx-1)*prob.dima
-        F = zeros(prob.dima)
-        
-        ##diag part
-        for i in 1:prob.na
-            F[I_idx] += ints.h1[I_config[i], I_config[i]]
-            for j in i+1:prob.na
-                F[I_idx] += ints.h2[I_config[i], I_config[i], I_config[j], I_config[j]]
-                F[I_idx] -= ints.h2[I_config[i], I_config[j], I_config[i], I_config[j]]
-            end
-        end
-        
-        #single excitation
-        for k in I_config
-            for l in vir
-                K_idx = a_lookup[k,l,I_idx]
-                sign_s = sign(K_idx)
-                F[abs(K_idx)] += sign_s*ints.h1[k,l]
-                for m in I_config
-                    if m!=k
-                        F[abs(K_idx)] += sign_s*(ints.h2[k,l,m,m]-ints.h2[k,m,l,m])
-                    end
-                end
-            end
-        end
-
-        #double excitation
-        for k in I_config
-            for i in I_config
-                if i > k
-                    for l in vir
-                        for j in vir
-                            if j > l
-                                single, sorted_s, sign_s = excit_config(I_config, k,l)
-                                double, sorted_d, sign_d = excit_config(sorted_s, i,j)
-                                J_idx = a_configs[sorted_d]
-                                if sign_d == sign_s
-                                    F[abs(J_idx)] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
-
-                                else
-                                    F[abs(J_idx)] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        mat = Diagonal(F)
-        sigma_two += mat*ci_vector
-    end
-    return sigma_two#=}}}=#
 end
 
 function compute_sigma_one(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
@@ -452,6 +325,132 @@ function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector
     return sigma_three#=}}}=#
 end
 
+function compute_sigma_one_ov(b_configs, b_lookup_ov, ci_vector, ints::H, prob::FCIProblem)
+    #dim is full dim of CI vector{{{
+    sigma_one = zeros(prob.dima, prob.dimb)
+    
+    ## bb σ1(Iα, Iβ)
+    for I_b in b_configs
+        I_idx = I_b[2]
+        I_config = I_b[1]
+        orbs = [1:prob.no;]
+        vir = filter!(x->!(x in I_config), orbs)
+        #I_idx_lin = I_idx + (I_idx-1)*prob.dima
+        F = zeros(prob.dimb)
+        
+        ##diag part
+        for i in 1:prob.nb
+            F[I_idx] += ints.h1[I_config[i], I_config[i]]
+            for j in i+1:prob.nb
+                F[I_idx] += ints.h2[I_config[i], I_config[i], I_config[j], I_config[j]]
+                F[I_idx] -= ints.h2[I_config[i], I_config[j], I_config[i], I_config[j]]
+            end
+        end
+        
+        ##single excitation
+        for k in I_config
+            for l in vir
+                K_idx = b_lookup_ov[k,l,I_idx]
+                sign_s = sign(K_idx)
+                F[abs(K_idx)] += sign_s*ints.h1[k,l]
+                for m in I_config
+                    if m!=k
+                        F[abs(K_idx)] += sign_s*(ints.h2[k,l,m,m]-ints.h2[k,m,l,m])
+                    end
+                end
+            end
+        end
+                
+        ##double excitation
+        for k in I_config
+            for i in I_config
+                if i>k
+                    for l in vir
+                        for j in vir
+                            if j>l
+                                single, sorted_s, sign_s = excit_config(I_config, k,l)
+                                double, sorted_d, sign_d = excit_config(sorted_s, i,j)
+                                J_idx = b_configs[sorted_d]
+                                if sign_d == sign_s
+                                    F[abs(J_idx)] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+
+                                else
+                                    F[abs(J_idx)] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        mat = Diagonal(F)
+        sigma_one += mat*transpose(ci_vector)
+    end
+    return sigma_one #=}}}=#
+end
+
+function compute_sigma_two_ov(a_configs, a_lookup_ov, ci_vector, ints::H, prob::FCIProblem)
+    sigma_two = zeros(prob.dima, prob.dimb)#={{{=#
+
+    ## aa σ2(Iα, Iβ)
+    for I in a_configs
+        I_idx = I[2]
+        I_config = I[1]
+        orbs = [1:prob.no;]
+        vir = filter!(x->!(x in I_config), orbs)
+        #I_idx_lin = I_idx + (I_idx-1)*prob.dima
+        F = zeros(prob.dima)
+        
+        ##diag part
+        for i in 1:prob.na
+            F[I_idx] += ints.h1[I_config[i], I_config[i]]
+            for j in i+1:prob.na
+                F[I_idx] += ints.h2[I_config[i], I_config[i], I_config[j], I_config[j]]
+                F[I_idx] -= ints.h2[I_config[i], I_config[j], I_config[i], I_config[j]]
+            end
+        end
+        
+        #single excitation
+        for k in I_config
+            for l in vir
+                K_idx = a_lookup_ov[k,l,I_idx]
+                sign_s = sign(K_idx)
+                F[abs(K_idx)] += sign_s*ints.h1[k,l]
+                for m in I_config
+                    if m!=k
+                        F[abs(K_idx)] += sign_s*(ints.h2[k,l,m,m]-ints.h2[k,m,l,m])
+                    end
+                end
+            end
+        end
+
+        #double excitation
+        for k in I_config
+            for i in I_config
+                if i > k
+                    for l in vir
+                        for j in vir
+                            if j > l
+                                single, sorted_s, sign_s = excit_config(I_config, k,l)
+                                double, sorted_d, sign_d = excit_config(sorted_s, i,j)
+                                J_idx = a_configs[sorted_d]
+                                if sign_d == sign_s
+                                    F[abs(J_idx)] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+
+                                else
+                                    F[abs(J_idx)] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) #one that works for closed
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        mat = Diagonal(F)
+        sigma_two += mat*ci_vector
+    end
+    return sigma_two#=}}}=#
+end
 function compute_sigma_three_ov(a_configs, b_configs, vector, a_lookup_ov, b_lookup_ov, ints::H, prob::FCIProblem)
     sigma3 = zeros(prob.dim) #{{{
 
@@ -520,7 +519,6 @@ function compute_sigma_three_ov(a_configs, b_configs, vector, a_lookup_ov, b_loo
     end
     return sigma3#=}}}=#
 end
-
 
 function precompute_spin_diag_terms(configs, nelecs, dim, ints::H)
     Hout = zeros(dim, dim)#={{{=#
