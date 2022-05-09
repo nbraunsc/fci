@@ -7,6 +7,8 @@ using StaticArrays
 using TensorOperations
 using JLD2
 using BenchmarkTools
+using StatProfilerHTML
+using Profile
 
 struct H
     h1::Array
@@ -14,15 +16,15 @@ struct H
 end
 
 function load_ints()
-    #@load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
-    @load "/Users/nicole/code/fci/test/data/_testdata_h4_triplet_integrals.jld2"
-    return H(one, two)
-    #return H(int1e, int2e)
+    @load "/Users/nicole/code/fci/test/data/_testdata_h8_integrals.jld2"
+    #@load "/Users/nicole/code/fci/test/data/_testdata_h4_triplet_integrals.jld2"
+    #return H(one, two)
+    return H(int1e, int2e)
 end
 
 function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=1, tol=1e-6, precompute_ss=false)
-    np = pyimport("numpy")
-    e_vals = npzread("/Users/nicole/code/fci/src/data/eigenvals_elec.npy")
+    #np = pyimport("numpy")
+    #e_vals = npzread("/Users/nicole/code/fci/src/data/eigenvals_elec.npy")
     a_configs = compute_configs(p)[1]
     b_configs = compute_configs(p)[2]
     
@@ -41,8 +43,8 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
         Hb = compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
         
         e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
-        println("Eigenvalue: ", e)
-        println("Eigenvalues from pyscf: ", e_vals)
+        #println("Eigenvalue: ", e)
+        #println("Eigenvalues from pyscf: ", e_vals)
         
         #Hmat = compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup){{{
         #Ia = SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I, p.dima, p.dima))
@@ -61,8 +63,8 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
 
     else
         e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, ci_vector, max_iter, tol)
-        println("Eigenvalue: ", e)
-        println("Eigenvalues from pyscf: ", e_vals)
+        #println("Eigenvalue: ", e)
+        #println("Eigenvalues from pyscf: ", e_vals)
 
         #@time sigma_one = compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p){{{
         #@time sigma_two = compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p)
@@ -92,8 +94,8 @@ function matvec(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem
 end
 
 function matvec(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, ci_vector=nothing)
-    sigma1 = vec(compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p))
-    sigma2 = vec(compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p))
+    sigma1 = vec(compute_sigma_one(b_configs, b_lookup, ci_vector, ints, p))
+    sigma2 = vec(compute_sigma_two(a_configs, a_lookup, ci_vector, ints, p))
     sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p))
     sigma = sigma1 + sigma2 + sigma3
     return sigma
@@ -280,7 +282,7 @@ function compute_sigma_two_ov(a_configs, a_lookup, ci_vector, ints::H, prob::FCI
     return sigma_two#=}}}=#
 end
 
-function compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
+function compute_sigma_one(b_configs, b_lookup, ci_vector, ints::H, prob::FCIProblem)
     ## bb σ1(Iα, Iβ){{{
     sigma_one = zeros(prob.dima, prob.dimb)
     ci_vector = reshape(ci_vector, prob.dima, prob.dimb)
@@ -339,7 +341,7 @@ function compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints::H, prob::FC
     return sigma_one
 end
 
-function compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
+function compute_sigma_two(a_configs, a_lookup, ci_vector, ints::H, prob::FCIProblem)
     ## aa σ2(Iα, Iβ){{{
     sigma_two = zeros(prob.dima, prob.dimb)
     ci_vector = reshape(ci_vector, prob.dima, prob.dimb)
@@ -450,7 +452,7 @@ function compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector
     return sigma_three#=}}}=#
 end
 
-function get_sigma3_unvec(a_configs, b_configs, vector, a_lookup, b_lookup, ints::H, prob::FCIProblem)
+function compute_sigma_three_ov(a_configs, b_configs, vector, a_lookup_ov, b_lookup_ov, ints::H, prob::FCIProblem)
     sigma3 = zeros(prob.dim) #{{{
 
     for I in a_configs  #alpha configs
@@ -475,7 +477,7 @@ function get_sigma3_unvec(a_configs, b_configs, vector, a_lookup, b_lookup, ints
             #excit alpha only
             for p in I_config
                 for q in vir_I
-                    idxa = a_lookup[p,q,I_idx]
+                    idxa = a_lookup_ov[p,q,I_idx]
                     sign_a = sign(idxa)
                     Kprim = abs(idxa) + (J_idx-1)*prob.dima
                     for m in J_config
@@ -488,7 +490,7 @@ function get_sigma3_unvec(a_configs, b_configs, vector, a_lookup, b_lookup, ints
             #excit beta only
             for r in J_config
                 for s in vir_J
-                    idxb = b_lookup[r,s,J_idx]
+                    idxb = b_lookup_ov[r,s,J_idx]
                     sign_b = sign(idxb)
                     Lprim = I_idx + (abs(idxb)-1)*prob.dima
                     for n in I_config
@@ -501,11 +503,11 @@ function get_sigma3_unvec(a_configs, b_configs, vector, a_lookup, b_lookup, ints
             #excit both alpha and beta
             for p in I_config
                 for q in vir_I
-                    idxa = a_lookup[p,q,I_idx]
+                    idxa = a_lookup_ov[p,q,I_idx]
                     sign_a = sign(idxa)
                     for r in J_config
                         for s in vir_J
-                            idxb = b_lookup[r,s,J_idx]
+                            idxb = b_lookup_ov[r,s,J_idx]
                             sign_b = sign(idxb)
                             L = abs(idxa) + (abs(idxb)-1)*prob.dima
                             #Hmat[K,L]
