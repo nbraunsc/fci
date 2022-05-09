@@ -53,7 +53,7 @@ function make_vert_graph(x)
         end
     end
     max = findmax(vert)[1]
-    println("max: ", max)
+    #println("max: ", max)
     return vert, max
 end
 
