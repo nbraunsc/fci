@@ -3,44 +3,6 @@ using LinearAlgebra
 using StaticArrays
 #using fci
 
-#x = Array{Int}(zeros(4,4))
-#x[1,:] .= [1,1,1,1]
-#x[2,:] = [1,2,3,4]
-#x[3,:] = [1,3,6,10]
-#x[4,:] = [1,4,10,20]
-#
-#vert = Array{Int}(zeros(4,4))
-#vert[1,:] = [1,2,3,4]
-#vert[2,:] = [5,6,7,8]
-#vert[3,:] = [9,10,11,12]
-#vert[4,:] = [13,14,15,16]
-#
-#y = Array{Int}(zeros(4,4))
-#y[1,:] .= [0,0,0,0]
-#y[2,:] = [0,1,1,1]
-#y[3,:] = [0,2,3,4]
-#y[4,:] = [0,3,6,10]
-##max = 16
-#
-##RAS Graphs for testing
-#rasx = Array{Int}(zeros(4,4))
-#rasx[1,:] = [1,1,1,0]
-#rasx[2,:] = [1,2,3,3]
-#rasx[3,:] = [0,0,3,6]
-#rasx[4,:] = [0,0,3,9]
-#
-#rasy = Array{Int}(zeros(4,4))
-#rasy[1,:] = [0,0,0,0]
-#rasy[2,:] = [0,1,1,0]
-#rasy[3,:] = [0,0,0,3]
-#rasy[4,:] = [0,0,0,6]
-#
-#ras_vert = Array{Int}(zeros(4,4))
-#ras_vert[1,:] = [1,2,3,0]
-#ras_vert[2,:] = [4,5,6,7]
-#ras_vert[3,:] = [0,0,8,9]
-#ras_vert[4,:] = [0,0,10,11]
-
 function make_vert_graph(x)
     vert = Array{Int16}(zeros(size(x)))
     count = 1
@@ -52,9 +14,9 @@ function make_vert_graph(x)
             end
         end
     end
-    max = findmax(vert)[1]
+    max_val = findmax(vert)[1]
     #println("max: ", max)
-    return vert, max
+    return vert, max_val
 end
 
 function make_graph_dict(y,vert)
