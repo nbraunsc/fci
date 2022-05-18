@@ -19,18 +19,51 @@ function make_x(norbs, nalpha)
     return xalpha#=}}}=#
 end
 
-function make_ras_x(no, nelec, fock::SVector{3, Int}, ras1_min=1, ras3_max=2)
-    x = make_x(no, nelec)
-    keep_rows = fock[1]+1-ras1_min
-    columns = nelec-ras3_max
-    for i in keep_rows+1:size(x)[1]
-        x[i,1:columns] .= 0 
-        for column in columns+1:size(x)[2]
-            x[i,column] = x[i-1,column]+x[i,column-1]
-        end
+function make_ras_x(norbs, nelec, fock::SVector{3, Int}, ras1_min=1, ras3_max=2)
+    n_unocc = (norbs-nelec)+1
+    x = zeros(Int, n_unocc, nelec+1)
+    x[1,:].=1
+    loc = [1,1]
+    #fock = (3,3,3)
+    
+    #RAS1
+    h = fock[1]-ras1_min
+    for spot in 1:h
+        loc[1] += 1
+        update_x!(x, loc)
+    end
+    p = fock[1]-h
+    loc[2] += p
+
+    #RAS2
+    p2 = nelec-ras1_min-ras3_max
+    h2 = fock[2] - p2
+    for spot in 1:h2
+        loc[1] += 1
+        update_x!(x, loc) #updates everything at loc and to the right
+    end
+    loc[2] += p2
+
+    #RAS3
+    h3 = fock[3] - ras3_max
+    for spot in 1:h3
+        loc[1] += 1
+        update_x!(x, loc) #updates everything at loc and to the right
     end
     return x
 end
+
+function update_x!(x, loc)
+    row = loc[1]
+    for column in loc[2]:size(x)[2]
+        if column == 1
+            x[row, column] = x[row-1, column]
+        else
+            x[row, column] = x[row-1, column] + x[row, column-1]
+        end
+    end
+end
+
 
 function make_ras_y(x, no::Int, nelec::Int, fock::SVector{3,Int}, ras1_min, ras3_max)
     #make RAS y graph

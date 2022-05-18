@@ -45,6 +45,7 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
         Hb = compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
         
         e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
+        println("Energy(Hartree): ", e)
         #println("Eigenvalue: ", e)
         #println("Eigenvalues from pyscf: ", e_vals)
         
@@ -65,6 +66,7 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
 
     else
         e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, ci_vector, max_iter, tol)
+        println("Energy(Hartree): ", e)
         #println("Eigenvalue: ", e)
         #println("Eigenvalues from pyscf: ", e_vals)
 

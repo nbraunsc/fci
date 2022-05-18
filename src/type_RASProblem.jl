@@ -19,9 +19,10 @@ struct RASProblem
     xbeta::Array{Int}
 end
 
-function RASProblem(no, na, nb, fock, ras1_min=1, ras3_max=2)
+function RASProblem(no, na, nb, fock::Any, ras1_min=1, ras3_max=2)
     na <= no || throw(DimensionMismatch)
     nb <= no || throw(DimensionMismatch)
+    fock = convert(SVector{3,Int},collect(fock))
     dima, xalpha = ras_calc_ndets(no, na, fock, ras1_min, ras3_max)
     dimb, xbeta = ras_calc_ndets(no, nb, fock, ras1_min, ras3_max)
     return RASProblem(no, na, nb, fock, ras1_min, ras3_max, "lanczos", 1, dima, dimb, dima*dimb, xalpha, xbeta)
@@ -33,7 +34,6 @@ function display(p::RASProblem)
 end
 
 function ras_calc_ndets(no, nelec, fock, ras1_min, ras3_max)
-    x = fci.make_x(no, nelec)
     x = fci.make_ras_x(no, nelec, fock, ras1_min, ras3_max)
     dim_x = findmax(x)[1]
     return dim_x, x

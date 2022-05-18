@@ -444,7 +444,7 @@ function ras_fill_lookup(prob::RASProblem, configs, dim_s)
                         continue
                     end
                     
-                    idx = configs[sorted_config]
+                    idx = configs[new_config]
                     lookup_table[p,q,i[2]] = sign_s*idx
                 end
             end
