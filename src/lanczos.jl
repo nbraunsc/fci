@@ -4,12 +4,23 @@ using JLD2
 using Printf
 using StaticArrays
 
+function orthogonalise(V::Matrix{Float64}, T::Matrix{Float64},  w::Vector{Float64}, k)
+    h_k = V[:,1:k]'*w
+    w_new = w - V[:,1:k]*h_k
+    return w_new
+end
+
 function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector=nothing, max_iter::Int=12, tol::Float64=1e-8)
     eigval = 0.0
+    
     if ci_vector == nothing
         b = rand(p.dim)
+        S = b'*b
+        b = b*inv(sqrt(S))
     else
         b = vec(ci_vector)
+        S = b'*b
+        b = b*inv(sqrt(S))
     end
     
     T = zeros(Float64, max_iter+1, max_iter)
@@ -31,17 +42,39 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
         
         #next vector
         w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, V[:,j])
-        #orthogonalise agaisnt two previous vectors
-        T[j,j] = dot(w,V[:, j])
+        
         #need to orthogonalise agaisnt all previous vectors in V
-        w = w - T[j,j]*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
-        #w = w - dot(w,V[:,j])*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
+        T[j,j] = dot(w,V[:, j])
+        w = orthogonalise(V, T,  w, j)
+        if norm(w) <= 1e-12
+            println("Norm is zero!")
+            error("here")
+        end
+
         #normalize
         T[j+1, j] = norm(w)
         V[:,j+1] = w/T[j+1, j]
+
+        #residual
+        res = V[:,j]- fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, V[:,j+1])
+        if norm(res) <= tol
+            Tm = T[1:j, 1:j]
+            eig = eigen(Tm)
+            eigval = eig.values[1]
+            return eigval
+        end
+        
+        if j > 2 
+            eig1 = eigen(T[1:j,1:j])
+            eig2 = eigen(T[1:j-1,1:j-1])
+            if eig1.values[1] - eig2.values[2] <= tol
+                println("\n ----------- CONVERGED -------------\n ")
+                return eig1.values[1]
+            end
+        end
         
         if j == max_iter
-            #println("\n ----------- HIT MAX ITERATIONS -------------\n ")
+            println("\n ----------- HIT MAX ITERATIONS -------------\n ")
             #make T into symmetric matrix of shape (m,m)
             Tm = T[1:max_iter, 1:max_iter]#=}}}=#
             eig = eigen(Tm)
@@ -57,8 +90,12 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
 
     if ci_vector == nothing
         b = rand(p.dim)
+        S = b'*b
+        b = b*inv(sqrt(S))
     else
-        b = ci_vector
+        b = vec(ci_vector)
+        S = b'*b
+        b = b*inv(sqrt(S))
     end
     
     T = zeros(Float64, max_iter+1, max_iter)
@@ -80,11 +117,10 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
         
         #next vector
         w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, V[:,j])
-        #orthogonalise agaisnt two previous vectors
-        T[j,j] = dot(w,V[:, j])
         #need to orthogonalise agaisnt all previous vectors in V
-        w = w -T[j,j]*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
-        #w = w - dot(w,V[:,j])*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
+        T[j,j] = dot(w,V[:, j])
+        w = orthogonalise(V, T,  w, j)
+        
         #normalize
         T[j+1, j] = norm(w)
         V[:,j+1] = w/T[j+1, j]
@@ -105,8 +141,12 @@ function Lanczos(p::RASProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
     eigval = 0.0
     if ci_vector == nothing
         b = rand(p.dim)
+        S = b'*b
+        b = b*inv(sqrt(S))
     else
         b = vec(ci_vector)
+        S = b'*b
+        b = b*inv(sqrt(S))
     end
     
     T = zeros(Float64, max_iter+1, max_iter)
@@ -128,11 +168,10 @@ function Lanczos(p::RASProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
         
         #next vector
         w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, V[:,j])
-        #orthogonalise agaisnt two previous vectors
-        T[j,j] = dot(w,V[:, j])
         #need to orthogonalise agaisnt all previous vectors in V
-        w = w - T[j,j]*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
-        #w = w - dot(w,V[:,j])*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
+        T[j,j] = dot(w,V[:, j])
+        w = orthogonalise(V, T,  w, j)
+        
         #normalize
         T[j+1, j] = norm(w)
         V[:,j+1] = w/T[j+1, j]
@@ -154,8 +193,12 @@ function Lanczos(p::RASProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
 
     if ci_vector == nothing
         b = rand(p.dim)
+        S = b'*b
+        b = b*inv(sqrt(S))
     else
-        b = ci_vector
+        b = vec(ci_vector)
+        S = b'*b
+        b = b*inv(sqrt(S))
     end
     
     T = zeros(Float64, max_iter+1, max_iter)
@@ -177,11 +220,9 @@ function Lanczos(p::RASProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
         
         #next vector
         w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, V[:,j])
-        #orthogonalise agaisnt two previous vectors
-        T[j,j] = dot(w,V[:, j])
         #need to orthogonalise agaisnt all previous vectors in V
-        w = w -T[j,j]*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
-        #w = w - dot(w,V[:,j])*V[:,j] - T[j-1, j]*V[:, j-1] #subtract projection on v_j and v_(j-1) 
+        T[j,j] = dot(w,V[:, j])
+        w = orthogonalise(V, T,  w, j)
         #normalize
         T[j+1, j] = norm(w)
         V[:,j+1] = w/T[j+1, j]

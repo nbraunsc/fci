@@ -7,7 +7,7 @@ using InteractiveUtils
 
 using fci
 
-function run_ras(ints::H, prob::RASProblem, precompute_ss=false, ci_vector=nothing, max_iter=12, nroots=1, tol=1e-6)
+function run_ras(ints::H, prob::RASProblem, precompute_ss=false, max_iter=12, ci_vector=nothing,  nroots=1, tol=1e-6)
     a_configs = ras_compute_configs(prob)[1]
     b_configs = ras_compute_configs(prob)[2]
     
@@ -20,10 +20,10 @@ function run_ras(ints::H, prob::RASProblem, precompute_ss=false, ci_vector=nothi
         Hb_diag = fci.precompute_spin_diag_terms(b_configs, prob.nb, prob.dimb, ints)
         
         #compute off diag terms of sigma1 and sigma2
-        a_lookup_ov = ras_fill_lookup_ov(prob, a_configs, prob.dima)
-        b_lookup_ov = ras_fill_lookup_ov(prob, b_configs, prob.dimb)
-        Ha = ras_compute_ss_terms_full(a_configs, a_lookup_ov, prob.dima, prob.no, prob.na, ints) + Ha_diag
-        Hb = ras_compute_ss_terms_full(b_configs, b_lookup_ov, prob.dimb, prob.no, prob.nb, ints) + Hb_diag
+        #a_lookup_ov = ras_fill_lookup_ov(prob, a_configs, prob.dima)
+        #b_lookup_ov = ras_fill_lookup_ov(prob, b_configs, prob.dimb)
+        Ha = ras_compute_ss_terms_full(a_configs, a_lookup, prob.dima, prob.no, prob.na, ints) + Ha_diag
+        Hb = ras_compute_ss_terms_full(b_configs, b_lookup, prob.dimb, prob.no, prob.nb, ints) + Hb_diag
         
         e = fci.Lanczos(prob, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
         println("Energy(Hartree): ", e)
@@ -45,6 +45,9 @@ function run_ras(ints::H, prob::RASProblem, precompute_ss=false, ci_vector=nothi
         #Base.display(diff2)}}}
 
     else
+        #a_lookup_ov = ras_fill_lookup_ov(prob, a_configs, prob.dima)
+        #b_lookup_ov = ras_fill_lookup_ov(prob, b_configs, prob.dimb)
+        #e = fci.Lanczos(prob, ints, a_configs, b_configs, a_lookup_ov, b_lookup_ov, ci_vector, max_iter, tol)
         e = fci.Lanczos(prob, ints, a_configs, b_configs, a_lookup, b_lookup, ci_vector, max_iter, tol)
         println("Energy(Hartree): ", e)
         #println("Eigenvalues from pyscf: ", e_vals)
@@ -64,6 +67,70 @@ function run_ras(ints::H, prob::RASProblem, precompute_ss=false, ci_vector=nothi
         #mat_sigma3 = reshape(sigma_three_ov, p.dima, p.dimb) }}}
     end
     return e
+end
+
+function build_full_Hmatrix(ints::H, p::RASProblem)
+    Hmat = zeros(p.dim, p.dim)#={{{=#
+    #np = pyimport("numpy")
+    #e_vals = npzread("/Users/nicole/code/fci/src/data/eigenvals_elec.npy")
+    #if closed shell only compute single spin
+    if p.na == p.nb 
+        a_configs = ras_compute_configs(p)[1]
+        b_configs = ras_compute_configs(p)[2]
+
+        #fill single excitation lookup tables
+        a_lookup = ras_fill_lookup(p, a_configs, p.dima)
+        b_lookup = ras_fill_lookup(p, b_configs, p.dimb)
+        
+        #compute diag terms of sigma 1 and sigma 2
+        Ha_diag = fci.precompute_spin_diag_terms(a_configs, p.na, p.dima, ints)
+        Hb_diag = fci.precompute_spin_diag_terms(b_configs, p.nb, p.dimb, ints)
+        
+        #compute off diag terms of sigma1 and sigma2
+        #a_lookup_ov = ras_fill_lookup_ov(p, a_configs, p.dima)
+        #b_lookup_ov = ras_fill_lookup_ov(p, b_configs, p.dimb)
+        Ha = ras_compute_ss_terms_full(a_configs, a_lookup, p.dima, p.no, p.na, ints) + Ha_diag
+        Hb = ras_compute_ss_terms_full(b_configs, b_lookup, p.dimb, p.no, p.nb, ints) + Hb_diag
+        
+        Hmat .+= kron(SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I,p.dimb,p.dimb)),  Ha)
+        Hmat .+= kron(Hb, SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I,p.dima,p.dima)))
+        
+        #compute both diag and off diag terms for sigma3 (mixed spin sigma)
+        Hmat .+= ras_compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup)
+        Hmat = .5*(Hmat+Hmat')
+        eig = eigen(Hmat)
+        println(eig.values[1:7])
+        #println("Eigenvalues from pyscf: ", e_vals)
+    
+    #if open shell must compute alpha and beta separately
+    else 
+        a_configs = compute_configs(p)[1]
+        b_configs = compute_configs(p)[2]
+    
+        #fill single excitation lookup tables
+        a_lookup = fill_lookup(p, a_configs, p.dima)
+        b_lookup = fill_lookup(p, b_configs, p.dimb)
+        #a_lookup = fill_lookup_ov(p, a_configs, p.dima)
+        #b_lookup = fill_lookup_ov(p, b_configs, p.dimb)
+
+        #compute diag terms of sigma 1 and sigma 2
+        Ha_diag = fci.precompute_spin_diag_terms(a_configs, p.na, p.dima, ints)
+        Hb_diag = fci.precompute_spin_diag_terms(b_configs, p.nb, p.dimb, ints)
+        
+        #compute off diag terms of sigma1 and sigma2
+        Ha = ras_compute_ss_terms_full(a_configs, a_lookup, p.dima, p.no, p.na, ints) + Ha_diag
+        Hb = ras_compute_ss_terms_full(b_configs, b_lookup, p.dimb, p.no, p.nb, ints) + Hb_diag
+        
+        Hmat .+= kron(SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I,p.dimb,p.dimb)),  Ha)
+        Hmat .+= kron(Hb, SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I,p.dima,p.dima)))
+        
+        #compute both diag and off diag terms for sigma3 (mixed spin sigma)
+        Hmat .+= ras_compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup)
+        Hmat = .5*(Hmat+Hmat')
+        eig = eigen(Hmat)
+        println(eig.values[1:7])
+    end#=}}}=#
+    return Hmat
 end
 
 function matvec(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::RASProblem, Ha, Hb, ci_vector=nothing)
@@ -325,16 +392,16 @@ function ras_compute_ss_terms_full(configs, lookup, dim, norbs, nelecs, ints::H)
                                 single, sorted_s, sign_s = excit_config(config, k,l)
                                 double, sorted_d, sign_d = excit_config(sorted_s, i,j)
                                 if haskey(configs, sorted_d)
-                                    idx = configs[sorted_d]
+                                    idx_new = configs[sorted_d]
                                 else
                                     continue
                                 end
                                 
                                 if sign_d == sign_s
-                                    @inbounds F[idx] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) 
+                                    @inbounds F[idx_new] += (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) 
 
                                 else
-                                    @inbounds F[idx] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) 
+                                    @inbounds F[idx_new] -= (ints.h2[i,j,k,l] - ints.h2[i,l,j,k]) 
                                 end
                             end
                         end
@@ -348,7 +415,7 @@ function ras_compute_ss_terms_full(configs, lookup, dim, norbs, nelecs, ints::H)
     return Ha
 end
 
-function compute_ab_terms_full(ints::H, prob::RASProblem, a_configs, b_configs, a_lookup, b_lookup)
+function ras_compute_ab_terms_full(ints::H, prob::RASProblem, a_configs, b_configs, a_lookup, b_lookup)
     Hmat = zeros(prob.dim, prob.dim)#={{{=#
     
     for Ka in a_configs
@@ -361,7 +428,7 @@ function compute_ab_terms_full(ints::H, prob::RASProblem, a_configs, b_configs, 
             Kb_config = Kb[1]
             orbsb = [1:prob.no;]
             virb = filter!(x->!(x in Kb_config), orbsb)
-            K = Ka_idx + (Kb_idx-1)*prob.dima #works for closed shell
+            K = Ka_idx + (Kb_idx-1)*prob.dima
             
             #diagonal part
             for l in Kb_config
@@ -373,9 +440,14 @@ function compute_ab_terms_full(ints::H, prob::RASProblem, a_configs, b_configs, 
             #excit alpha only
             for p in Ka_config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(Ka_config, p,q)
-                    idxa = abs(a_lookup[p,q,Ka_idx])
-                    Kprime = idxa + (Kb_idx-1)*prob.dima
+                    #a_single, sort_a, sign_a = excit_config(Ka_config, p,q)
+                    idxa = a_lookup[p,q,Ka_idx]
+                    if idxa == 0
+                        continue
+                    end
+
+                    sign_a = sign(idxa)
+                    Kprime = abs(idxa) + (Kb_idx-1)*prob.dima
                     #alpha beta <ii|jj>
                     for m in Kb_config
                         Hmat[K,Kprime]+=sign_a*ints.h2[p,q,m,m]
@@ -386,9 +458,14 @@ function compute_ab_terms_full(ints::H, prob::RASProblem, a_configs, b_configs, 
             #excit beta only
             for r in Kb_config
                 for s in virb
-                    b_single, sort_b, sign_b = excit_config(Kb_config, r,s)
-                    idxb = abs(b_lookup[r,s,Kb_idx])
-                    Lprime = Ka_idx + (idxb-1)*prob.dima
+                    #b_single, sort_b, sign_b = excit_config(Kb_config, r,s)
+                    idxb = b_lookup[r,s,Kb_idx]
+                    if idxb == 0
+                        continue
+                    end
+
+                    sign_b = sign(idxb)
+                    Lprime = Ka_idx + (abs(idxb)-1)*prob.dima
                     
                     #alpha beta <ii|jj>
                     for n in Ka_config
@@ -400,13 +477,21 @@ function compute_ab_terms_full(ints::H, prob::RASProblem, a_configs, b_configs, 
             #excit alpha and beta
             for p in Ka_config
                 for q in vira
-                    a_single, sort_a, sign_a = excit_config(Ka_config, p,q)
-                    idxa = abs(a_lookup[p,q,Ka_idx])
+                    #a_single, sort_a, sign_a = excit_config(Ka_config, p,q)
+                    idxa = a_lookup[p,q,Ka_idx]
+                    if idxa == 0
+                        continue
+                    end
+                    sign_a = sign(idxa)
                     for r in Kb_config
                         for s in virb
-                            b_single, sort_b, sign_b = excit_config(Kb_config, r,s)
-                            idxb = abs(b_lookup[r,s,Kb_idx])
-                            L = idxa + (idxb-1)*prob.dima
+                            #b_single, sort_b, sign_b = excit_config(Kb_config, r,s)
+                            idxb = b_lookup[r,s,Kb_idx]
+                            if idxb == 0
+                                continue
+                            end
+                            sign_b = sign(idxb)
+                            L = abs(idxa) + (abs(idxb)-1)*prob.dima
                             Hmat[K,L] += sign_a*sign_b*(ints.h2[p,q,r,s])
                         end
                     end

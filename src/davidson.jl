@@ -6,7 +6,7 @@ function eachcolumn(V::AbstractMatrix)
     [V[:,i] for i in 1:size(V,2)]
 end
 
-function orthonormalize(V::Matrix{Float64})
+function orthonormalize_dav(V::Matrix{Float64})
     Q,R = qr(V)
     return Q*Matrix{Float64}(I,size(V)...)
 end

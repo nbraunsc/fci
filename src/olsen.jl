@@ -127,10 +127,10 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
         
         #compute both diag and off diag terms for sigma3 (mixed spin sigma)
         Hmat .+= compute_ab_terms_full(ints, p, a_configs, a_configs, a_lookup, a_lookup)
+        #Hmat = .5*(Hmat+Hmat')
         eig = eigen(Hmat)
         println(eig.values[1:7])
         println("Eigenvalues from pyscf: ", e_vals)
-        error("stop")
     
     #if open shell must compute alpha and beta separately
     else 
@@ -155,6 +155,7 @@ function build_full_Hmatrix(ints::H, p::FCIProblem)
         #compute both diag and off diag terms for sigma3 (mixed spin sigma)
         Hmat .+= compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup)
     end#=}}}=#
+    Hmat = .5*(Hmat+Hmat')
     return Hmat
 end
 
