@@ -20,14 +20,13 @@ function run_ras(ints::H, prob::RASProblem, precompute_ss=false, max_iter=12, ci
         Hb_diag = fci.precompute_spin_diag_terms(b_configs, prob.nb, prob.dimb, ints)
         
         #compute off diag terms of sigma1 and sigma2
-        #a_lookup_ov = ras_fill_lookup_ov(prob, a_configs, prob.dima)
-        #b_lookup_ov = ras_fill_lookup_ov(prob, b_configs, prob.dimb)
-        Ha = ras_compute_ss_terms_full(a_configs, a_lookup, prob.dima, prob.no, prob.na, ints) + Ha_diag
-        Hb = ras_compute_ss_terms_full(b_configs, b_lookup, prob.dimb, prob.no, prob.nb, ints) + Hb_diag
+        a_lookup_ov = ras_fill_lookup_ov(prob, a_configs, prob.dima)
+        b_lookup_ov = ras_fill_lookup_ov(prob, b_configs, prob.dimb)
+        Ha = ras_compute_ss_terms_full(a_configs, a_lookup_ov, prob.dima, prob.no, prob.na, ints) + Ha_diag
+        Hb = ras_compute_ss_terms_full(b_configs, b_lookup_ov, prob.dimb, prob.no, prob.nb, ints) + Hb_diag
         
         e = fci.Lanczos(prob, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
         println("Energy(Hartree): ", e)
-        #println("Eigenvalues from pyscf: ", e_vals)
         
         #Hmat = compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup){{{
         #Ia = SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I, p.dima, p.dima))
@@ -45,12 +44,8 @@ function run_ras(ints::H, prob::RASProblem, precompute_ss=false, max_iter=12, ci
         #Base.display(diff2)}}}
 
     else
-        #a_lookup_ov = ras_fill_lookup_ov(prob, a_configs, prob.dima)
-        #b_lookup_ov = ras_fill_lookup_ov(prob, b_configs, prob.dimb)
-        #e = fci.Lanczos(prob, ints, a_configs, b_configs, a_lookup_ov, b_lookup_ov, ci_vector, max_iter, tol)
         e = fci.Lanczos(prob, ints, a_configs, b_configs, a_lookup, b_lookup, ci_vector, max_iter, tol)
         println("Energy(Hartree): ", e)
-        #println("Eigenvalues from pyscf: ", e_vals)
 
         #@time sigma_one = compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p){{{
         #@time sigma_two = compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p)
@@ -79,24 +74,25 @@ function build_full_Hmatrix(ints::H, p::RASProblem)
         b_configs = ras_compute_configs(p)[2]
 
         #fill single excitation lookup tables
-        a_lookup = ras_fill_lookup(p, a_configs, p.dima)
-        b_lookup = ras_fill_lookup(p, b_configs, p.dimb)
+        #a_lookup = ras_fill_lookup(p, a_configs, p.dima)
+        #b_lookup = ras_fill_lookup(p, b_configs, p.dimb)
+        
+        a_lookup_ov = ras_fill_lookup_ov(p, a_configs, p.dima)
+        b_lookup_ov = ras_fill_lookup_ov(p, b_configs, p.dimb)
         
         #compute diag terms of sigma 1 and sigma 2
         Ha_diag = fci.precompute_spin_diag_terms(a_configs, p.na, p.dima, ints)
         Hb_diag = fci.precompute_spin_diag_terms(b_configs, p.nb, p.dimb, ints)
         
         #compute off diag terms of sigma1 and sigma2
-        #a_lookup_ov = ras_fill_lookup_ov(p, a_configs, p.dima)
-        #b_lookup_ov = ras_fill_lookup_ov(p, b_configs, p.dimb)
-        Ha = ras_compute_ss_terms_full(a_configs, a_lookup, p.dima, p.no, p.na, ints) + Ha_diag
-        Hb = ras_compute_ss_terms_full(b_configs, b_lookup, p.dimb, p.no, p.nb, ints) + Hb_diag
+        Ha = ras_compute_ss_terms_full(a_configs, a_lookup_ov, p.dima, p.no, p.na, ints) + Ha_diag
+        Hb = ras_compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
         
         Hmat .+= kron(SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I,p.dimb,p.dimb)),  Ha)
         Hmat .+= kron(Hb, SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I,p.dima,p.dima)))
         
         #compute both diag and off diag terms for sigma3 (mixed spin sigma)
-        Hmat .+= ras_compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup)
+        Hmat .+= ras_compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup_ov, b_lookup_ov)
         Hmat = .5*(Hmat+Hmat')
         eig = eigen(Hmat)
         println(eig.values[1:7])
@@ -108,24 +104,24 @@ function build_full_Hmatrix(ints::H, p::RASProblem)
         b_configs = compute_configs(p)[2]
     
         #fill single excitation lookup tables
-        a_lookup = fill_lookup(p, a_configs, p.dima)
-        b_lookup = fill_lookup(p, b_configs, p.dimb)
-        #a_lookup = fill_lookup_ov(p, a_configs, p.dima)
-        #b_lookup = fill_lookup_ov(p, b_configs, p.dimb)
+        #a_lookup = fill_lookup(p, a_configs, p.dima)
+        #b_lookup = fill_lookup(p, b_configs, p.dimb)
+        a_lookup_ov = fill_lookup_ov(p, a_configs, p.dima)
+        b_lookup_ov = fill_lookup_ov(p, b_configs, p.dimb)
 
         #compute diag terms of sigma 1 and sigma 2
         Ha_diag = fci.precompute_spin_diag_terms(a_configs, p.na, p.dima, ints)
         Hb_diag = fci.precompute_spin_diag_terms(b_configs, p.nb, p.dimb, ints)
         
         #compute off diag terms of sigma1 and sigma2
-        Ha = ras_compute_ss_terms_full(a_configs, a_lookup, p.dima, p.no, p.na, ints) + Ha_diag
-        Hb = ras_compute_ss_terms_full(b_configs, b_lookup, p.dimb, p.no, p.nb, ints) + Hb_diag
+        Ha = ras_compute_ss_terms_full(a_configs, a_lookup_ov, p.dima, p.no, p.na, ints) + Ha_diag
+        Hb = ras_compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
         
         Hmat .+= kron(SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I,p.dimb,p.dimb)),  Ha)
         Hmat .+= kron(Hb, SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I,p.dima,p.dima)))
         
         #compute both diag and off diag terms for sigma3 (mixed spin sigma)
-        Hmat .+= ras_compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup, b_lookup)
+        Hmat .+= ras_compute_ab_terms_full(ints, p, a_configs, b_configs, a_lookup_ov, b_lookup_ov)
         Hmat = .5*(Hmat+Hmat')
         eig = eigen(Hmat)
         println(eig.values[1:7])
