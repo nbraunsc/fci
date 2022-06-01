@@ -29,7 +29,7 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
     q1 = b/norm(b)
     V[:,1] = q1
     #next vector
-    w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, b) 
+    w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, q1) 
     #orthogonalise
     a1 = dot(w,V[:,1])
     T[1,1] = a1
@@ -51,6 +51,10 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
         #next vector
         wk = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, qk) 
         wk = wk - bk*qk_1
+        res = q_1'*wk*q1
+        #check point for res
+        println(norm(res))
+
         ak = wk'*qk
         T[i,i] = ak
         wk = wk - ak*qk
