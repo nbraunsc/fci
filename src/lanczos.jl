@@ -26,6 +26,8 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
     T = zeros(Float64, max_iter+1, max_iter)
     V = zeros(Float64, p.dim, max_iter+1)
     #normalize start vector
+    println(norm(b))
+    error("here")
     q1 = b/norm(b)
     V[:,1] = q1
     #next vector
@@ -35,11 +37,10 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
     T[1,1] = a1
     w = w - a1*q1
     #normalize next vector
-    b2 = norm(w)
-    T[2,1] = b2
-    V[:,2] = w/b2
     bk = norm(w)
-    wk = w
+    T[2,1] = bk
+    V[:,2] = w/bk
+    #wk = w
 
     for i = 2:max_iter
         qk = V[:,i]
@@ -50,11 +51,11 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
         
         #next vector
         wk = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, qk) 
+        #res = norm(w - wk)
+        #res = norm(w - q1'*wk*q1)
+        #println(res)
+        
         wk = wk - bk*qk_1
-        res = q_1'*wk*q1
-        #check point for res
-        println(norm(res))
-
         ak = wk'*qk
         T[i,i] = ak
         wk = wk - ak*qk
@@ -68,17 +69,31 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
         end
         wk = wk-vec
 
-        #check point
         bk = norm(wk)
-        if bk <= 1e-12
-            Tm = T[1:i, 1:i]#=}}}=#
+        T[i+1, i] = bk
+        qk = wk/bk
+        V[:,i+1] = qk
+        
+        Tm = T[1:i-1, 1:i-1]
+        Vm = V[:, 1:i-1]
+        eig = eigen(Tm)
+        ritz_val = eig.values[1]
+        ritz_vec = Vm*eig.vectors[:,1]
+        e = ones(size(ritz_vec))
+        res = bk*abs(e'*ritz_vec)
+        println(res)
+        
+        if res <= tol 
+            println("\n ----------- CONVERGED in ", i, " iterations -------------\n ")
+            wk = wk - bk*qk_1
+            ak = wk'*qk
+            T[i,i] = ak
+            Base.display(T[1:i, 1:i])
+            Tm = T[1:i, 1:i]
             eig = eigen(Tm)
             eigval = eig.values[1]
             return eigval
         end
-        T[i+1, i] = bk
-        qk = wk/bk
-        V[:,i+1] = qk
         
         if i == max_iter
             println("\n ----------- HIT MAX ITERATIONS -------------\n ")

@@ -1,4 +1,5 @@
 using fci
+using KrylovKit
 using LinearAlgebra
 using Printf
 using PyCall
@@ -10,6 +11,7 @@ using BenchmarkTools
 #using StatProfilerHTML
 #using Profile
 using InteractiveUtils
+using LinearMaps
 
 struct H
     h1::Array
@@ -44,8 +46,11 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
         Ha = compute_ss_terms_full(a_configs, a_lookup_ov, p.dima, p.no, p.na, ints) + Ha_diag
         Hb = compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
         
-        e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
-        println("Energy(Hartree): ", e)
+        Hmap = fci.get_map(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, ci_vector)
+        return Hmap
+        error("here")
+        #e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
+        #println("Energy(Hartree): ", e)
         #println("Eigenvalue: ", e)
         #println("Eigenvalues from pyscf: ", e_vals)
         
@@ -84,17 +89,37 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
         #@time sigma_three_ov = get_sigma3_unvec(a_configs, b_configs, ci_vector, a_lookup_ov, b_lookup_ov, ints, p)
         #mat_sigma3 = reshape(sigma_three_ov, p.dima, p.dimb) }}}
     end
-    return e
+
+    e = 0
+    v = Array{Float64,2}
+    if ci_vector==nothing
+        e, v = eigs(Hmap, nev=nroots, which=:SR, tol=tol)
+        e = real(e)
+        for ei in e
+            @printf(" Energy: %12.8f\n", ei)
+        end
+    
+    else
+        e, vecs, info = eigsolve(Hmap, ci_vector, nroots, :SR)
+        e = real(e)
+        for ei in e
+            @printf(" Energy: %12.8f\n", ei)
+        end
+    end
+    return e, v
 end
 
-function matvec(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, Ha, Hb, ci_vector=nothing)
-    Ia = SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I, p.dima, p.dima))#={{{=#
+function get_map(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, Ha, Hb, ci_vector=nothing)
+    Ia = SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I, p.dima, p.dima))
     Ib = SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I, p.dimb, p.dimb))
-    sigma1 = kron(Hb, Ia)*ci_vector
-    sigma2 = kron(Ib, Ha)*ci_vector
-    sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p))
-    sigma = sigma1 + sigma2 + sigma3
-    return sigma#=}}}=#
+    function mymatvec(v)
+        sigma1 = kron(Hb, Ia)*ci_vector
+        sigma2 = kron(Ib, Ha)*ci_vector
+        sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p))
+        sigma = sigma1 + sigma2 + sigma3
+        return sigma
+    end
+    return LinearMap(mymatvec, p.dim, p.dim, issymmetric=true, ismutating=false, ishermitian=true)
 end
 
 function matvec(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, ci_vector=nothing)
