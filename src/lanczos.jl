@@ -4,10 +4,104 @@ using JLD2
 using Printf
 using StaticArrays
 
-function orthogonalise(V::Matrix{Float64}, T::Matrix{Float64},  w::Vector{Float64}, k)
-    h_k = V[:,1:k]'*w
-    w_new = w - V[:,1:k]*h_k
-    return w_new
+#function orthogonalise(V::Matrix{Float64}, T::Matrix{Float64},  w::Vector{Float64}, k)
+#    h_k = V[:,1:k]'*w
+#    w_new = w - V[:,1:k]*h_k
+#    return w_new
+#end
+
+function make_t(alpha, beta)
+    shape_t = size(alpha)[1]
+    T = zeros(shape_t, shape_t)
+    for i = 1:shape_t-1
+        T[i,i] = alpha[i]
+        T[i,i+1] = beta[i+1]
+        T[i+1,i] = beta[i+1]
+    end
+    T[shape_t, shape_t] = alpha[shape_t]
+    return T
+end
+
+
+function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_lookup, ci_vector=nothing, max_iter::Int=12, tol::Float64=1e-8)
+    eigval = 0.0
+    
+    if ci_vector == nothing
+        v = rand(p.dim)
+        #S = v'*v
+        #v = v*inv(sqrt(S))
+    else
+        v = vec(ci_vector)
+        #S = v'*v
+        #v = v*inv(sqrt(S))
+    end
+
+    alpha = zeros(Float64, max_iter)
+    beta = zeros(Float64, max_iter-1)
+    
+    org = deepcopy(v/norm(v)) 
+    beta[1] = norm(v)
+    r = v
+    T = zeros(Float64, max_iter+1, max_iter)
+    V = zeros(Float64, p.dim, max_iter+1)
+
+    for j in 1:max_iter
+        if j == 1
+            V[:,j] = r/beta[1]
+        else
+            V[:,j] = r/beta[j-1]
+        end
+
+        r = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, V[:,j]) 
+
+        if j != 1
+            r = r - V[:,j-1]*beta[j-1]
+        end
+        alpha[j] = V[:,j]'*r
+        r = r - V[:,j]*alpha[j]
+
+        if j != 1
+            #reorthogonalization
+            for k in 1:j-1
+                qk = V[:,k]
+                x = r'*qk
+                r = r - x*qk
+                #check ortho
+                check = r'*V[:,k]
+                if check > 1e-14
+                    error("not orthogonal")
+                end
+
+            end
+            beta[j] = norm(r)
+            
+            #Fill T matrix
+            T = make_t(alpha[1:j], beta[1:j])
+            #Base.display(T)
+
+            #compute approx eigenvlaes of Tj
+            F = eigen(T)
+            theta_i = F.values[1]
+            s_i = F.vectors[:,1]
+            res = abs(beta[j]*s_i[j])
+            println("  Residual: ", res)
+
+            ritz_vec = V[:,1:j]*s_i
+            Ax = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, ritz_vec)
+            other_res = norm(Ax - ritz_vec*theta_i)
+            #other_res = norm(Ax - org)
+            #println(" OTHER Residual: ", other_res)
+
+
+
+            if res <= tol
+                println("\n ----------- CONVERGED in ", j, " iterations -------------\n ")
+                eval = F.values[1]
+                vector = V[:,1:j]*F.vectors[:,j]
+                return eval
+            end
+        end
+    end
 end
 
 function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector=nothing, max_iter::Int=12, tol::Float64=1e-8)
@@ -107,83 +201,83 @@ function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_looku
     return eigval
 end
 
-function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_lookup, ci_vector=nothing, max_iter::Int=12, tol::Float64=1e-8)
-    eigval = 0.0
-    
-    if ci_vector == nothing
-        b = rand(p.dim)
-        S = b'*b
-        b = b*inv(sqrt(S))
-    else
-        b = vec(ci_vector)
-        S = b'*b
-        b = b*inv(sqrt(S))
-    end
-    
-    T = zeros(Float64, max_iter+1, max_iter)
-    V = zeros(Float64, p.dim, max_iter+1)
-    #normalize start vector
-    q1 = b/norm(b)
-    V[:,1] = q1
-    #next vector
-    w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, b) 
-    #orthogonalise
-    a1 = dot(w,V[:,1])
-    T[1,1] = a1
-    w = w - a1*q1
-    #normalize next vector
-    b2 = norm(w)
-    T[2,1] = b2
-    V[:,2] = w/b2
-    bk = norm(w)
-    wk = w
-
-    for i = 2:max_iter
-        qk = V[:,i]
-        qk_1 = V[:,i-1]
-
-        #make T symmetric by setting b values across diagonal
-        T[i-1, i] = T[i, i-1]
-        
-        #next vector
-        wk = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, qk) 
-        wk = wk - bk*qk_1
-        ak = wk'*qk
-        T[i,i] = ak
-        wk = wk - ak*qk
-
-        #reorthogonalization
-        vec = zeros(size(wk))
-        for j in 1:i-1
-            qj = V[:,j]
-            x = wk'*qj
-            vec = vec + x*qj
-        end
-        wk = wk-vec
-
-        #check point
-        bk = norm(wk)
-        if bk <= 1e-12
-            Tm = T[1:i, 1:i]#=}}}=#
-            eig = eigen(Tm)
-            eigval = eig.values[1]
-            return eigval
-        end
-        T[i+1, i] = bk
-        qk = wk/bk
-        V[:,i+1] = qk
-        
-        if i == max_iter
-            println("\n ----------- HIT MAX ITERATIONS -------------\n ")
-            #make T into symmetric matrix of shape (m,m)
-            Tm = T[1:max_iter, 1:max_iter]#=}}}=#
-            eig = eigen(Tm)
-            eigval = eig.values[1]
-            #println(eigvals)
-        end
-    end
-    return eigval
-end
+#function Lanczos(p::FCIProblem, ints::H, a_configs, b_configs, a_lookup, b_lookup, ci_vector=nothing, max_iter::Int=12, tol::Float64=1e-8)
+#    eigval = 0.0
+#    
+#    if ci_vector == nothing
+#        b = rand(p.dim)
+#        S = b'*b
+#        b = b*inv(sqrt(S))
+#    else
+#        b = vec(ci_vector)
+#        S = b'*b
+#        b = b*inv(sqrt(S))
+#    end
+#    
+#    T = zeros(Float64, max_iter+1, max_iter)
+#    V = zeros(Float64, p.dim, max_iter+1)
+#    #normalize start vector
+#    q1 = b/norm(b)
+#    V[:,1] = q1
+#    #next vector
+#    w = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, b) 
+#    #orthogonalise
+#    a1 = dot(w,V[:,1])
+#    T[1,1] = a1
+#    w = w - a1*q1
+#    #normalize next vector
+#    b2 = norm(w)
+#    T[2,1] = b2
+#    V[:,2] = w/b2
+#    bk = norm(w)
+#    wk = w
+#
+#    for i = 2:max_iter
+#        qk = V[:,i]
+#        qk_1 = V[:,i-1]
+#
+#        #make T symmetric by setting b values across diagonal
+#        T[i-1, i] = T[i, i-1]
+#        
+#        #next vector
+#        wk = fci.matvec(a_configs, b_configs, a_lookup, b_lookup, ints, p, qk) 
+#        wk = wk - bk*qk_1
+#        ak = wk'*qk
+#        T[i,i] = ak
+#        wk = wk - ak*qk
+#
+#        #reorthogonalization
+#        vec = zeros(size(wk))
+#        for j in 1:i-1
+#            qj = V[:,j]
+#            x = wk'*qj
+#            vec = vec + x*qj
+#        end
+#        wk = wk-vec
+#
+#        #check point
+#        bk = norm(wk)
+#        if bk <= 1e-12
+#            Tm = T[1:i, 1:i]#=}}}=#
+#            eig = eigen(Tm)
+#            eigval = eig.values[1]
+#            return eigval
+#        end
+#        T[i+1, i] = bk
+#        qk = wk/bk
+#        V[:,i+1] = qk
+#        
+#        if i == max_iter
+#            println("\n ----------- HIT MAX ITERATIONS -------------\n ")
+#            #make T into symmetric matrix of shape (m,m)
+#            Tm = T[1:max_iter, 1:max_iter]#=}}}=#
+#            eig = eigen(Tm)
+#            eigval = eig.values[1]
+#            #println(eigvals)
+#        end
+#    end
+#    return eigval
+#end
 
 function Lanczos(p::RASProblem, ints::H, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector=nothing, max_iter::Int=12, tol::Float64=1e-8)
     eigval = 0.0

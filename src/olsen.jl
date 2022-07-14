@@ -13,6 +13,9 @@ using BenchmarkTools
 using InteractiveUtils
 using LinearMaps
 
+using Pkg; Pkg.activate("../../FermiCG/")
+using FermiCG
+
 struct H
     h1::Array
     h2::Array
@@ -26,7 +29,7 @@ function load_ints()
     return H(int1e, int2e)#=}}}=#
 end
 
-function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=1, tol=1e-6, precompute_ss=false)
+function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=1, tol=1e-6, precompute_ss=false, davidson=true)
     np = pyimport("numpy")
     e_vals = npzread("/Users/nicole/code/fci/src/data/eigenvals_elec.npy")
     a_configs = compute_configs(p)[1]
@@ -47,8 +50,8 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
         Hb = compute_ss_terms_full(b_configs, b_lookup_ov, p.dimb, p.no, p.nb, ints) + Hb_diag
         
         Hmap = fci.get_map(a_configs, b_configs, a_lookup, b_lookup, ints, p, Ha, Hb, ci_vector)
-        return Hmap
-        error("here")
+        #return Hmap
+        #error("here")
         #e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, Ha, Hb, ci_vector, max_iter, tol)
         #println("Energy(Hartree): ", e)
         #println("Eigenvalue: ", e)
@@ -70,52 +73,61 @@ function run_fci(ints::H, p::FCIProblem, ci_vector=nothing, max_iter=12, nroots=
         #Base.display(diff2)}}}
 
     else
-        e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, ci_vector, max_iter, tol)
-        println("Energy(Hartree): ", e)
+        Hmap = fci.get_map(a_configs, b_configs, a_lookup, b_lookup, ints, p, ci_vector)
+        #e = fci.Lanczos(p, ints, a_configs, b_configs, a_lookup, b_lookup, ci_vector, max_iter, tol)
+        #println("Energy(Hartree): ", e)
+        #error("stop after lanczos")
         #println("Eigenvalue: ", e)
         #println("Eigenvalues from pyscf: ", e_vals)
-
-        #@time sigma_one = compute_sigma_one_all(b_configs, b_lookup, ci_vector, ints, p){{{
-        #@time sigma_two = compute_sigma_two_all(a_configs, a_lookup, ci_vector, ints, p)
-        #@time sigma_three = compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p)
-        #@btime sigma_two = compute_sigma_two_all($a_configs, $a_lookup, $ci_vector, $ints, $p)
-        
-        #a_lookup_ov = fill_lookup_ov(p, a_configs, p.dima)
-        #b_lookup_ov = fill_lookup_ov(p, b_configs, p.dimb)
-        #@time sigma_one_ov = compute_sigma_one_ov(b_configs, b_lookup_ov, ci_vector, ints, p)
-        #@btime sigma_two_ov = compute_sigma_two_ov($a_configs, $a_lookup_ov, $ci_vector, $ints, $p)
-        #a_lookup_ov = fill_lookup_ov(p, a_configs, p.dima)
-        #b_lookup_ov = fill_lookup_ov(p, b_configs, p.dimb)
-        #@time sigma_three_ov = get_sigma3_unvec(a_configs, b_configs, ci_vector, a_lookup_ov, b_lookup_ov, ints, p)
-        #mat_sigma3 = reshape(sigma_three_ov, p.dima, p.dimb) }}}
     end
 
-    e = 0
-    v = Array{Float64,2}
-    if ci_vector==nothing
-        e, v = eigs(Hmap, nev=nroots, which=:SR, tol=tol)
-        e = real(e)
-        for ei in e
-            @printf(" Energy: %12.8f\n", ei)
-        end
-    
+    if davidson==true
+        davidson = FermiCG.Davidson(Hmap, max_iter=max_iter, nroots=nroots, tol=tol)
+        @time e, v = FermiCG.solve(davidson)
+        println("Mine from davidson:     ", e)
+        println("Eigenvalues from pyscf: ", e_vals)
     else
-        e, vecs, info = eigsolve(Hmap, ci_vector, nroots, :SR)
-        e = real(e)
-        for ei in e
-            @printf(" Energy: %12.8f\n", ei)
+        e = 0
+        v = Array{Float64,2}
+        if ci_vector==nothing
+            e, v = eigs(Hmap, nev=nroots, which=:SR, tol=tol)
+            e = real(e)
+            for ei in e
+                @printf(" Energy: %12.8f\n", ei)
+            end
+
+        else
+            e, vecs, info = eigsolve(Hmap, ci_vector, nroots, :SR)
+            e = real(e)
+            for ei in e
+                @printf(" Energy: %12.8f\n", ei)
+            end
         end
+        return e, v
     end
-    return e, v
 end
 
 function get_map(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, Ha, Hb, ci_vector=nothing)
     Ia = SMatrix{p.dima, p.dima, UInt8}(Matrix{UInt8}(I, p.dima, p.dima))
     Ib = SMatrix{p.dimb, p.dimb, UInt8}(Matrix{UInt8}(I, p.dimb, p.dimb))
     function mymatvec(v)
-        sigma1 = kron(Hb, Ia)*ci_vector
-        sigma2 = kron(Ib, Ha)*ci_vector
-        sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p))
+        sigma1 = kron(Hb, Ia)*v
+        sigma2 = kron(Ib, Ha)*v
+        sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, v, ints, p))
+        #sigma1 = kron(Hb, Ia)*ci_vector
+        #sigma2 = kron(Ib, Ha)*ci_vector
+        #sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, ci_vector, ints, p))
+        sigma = sigma1 + sigma2 + sigma3
+        return sigma
+    end
+    return LinearMap(mymatvec, p.dim, p.dim, issymmetric=true, ismutating=false, ishermitian=true)
+end
+
+function get_map(a_configs, b_configs, a_lookup, b_lookup, ints::H, p::FCIProblem, ci_vector=nothing)
+    function mymatvec(v)
+        sigma1 = vec(compute_sigma_one(b_configs, b_lookup, v, ints, p))
+        sigma2 = vec(compute_sigma_two(a_configs, a_lookup, v, ints, p))
+        sigma3 = vec(compute_sigma_three(a_configs, b_configs, a_lookup, b_lookup, v, ints, p))
         sigma = sigma1 + sigma2 + sigma3
         return sigma
     end
